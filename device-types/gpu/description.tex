@@ -128,7 +128,7 @@ work. This is like a GART in a real GPU.
 \item Allocate a framebuffer from guest ram, and attach it as backing
   storage to the resource just created, using
   VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING.  Scatter lists are
-  supported, so the framebuffer doesn't need to be contignous in guest
+  supported, so the framebuffer doesn't need to be contiguous in guest
   physical memory.
 \item Use VIRTIO_GPU_CMD_SET_SCANOUT to link the framebuffer to
   a display scanout.
@@ -166,7 +166,7 @@ configure things:
 
 \devicenormative{\subsubsection}{Device Operation: Command lifecycle and fencing}{Device Types / GPU Device / Device Operation / Device Operation: Command lifecycle and fencing}
 
-The device MAY process controlq commands asyncronously and return them
+The device MAY process controlq commands asynchronously and return them
 to the driver before the processing is complete.  If the driver needs
 to know when the processing is finished it can set the
 VIRTIO_GPU_FLAG_FENCE flag in the request.  The device MUST finish the
@@ -190,7 +190,7 @@ the shape use VIRTIO_GPU_CMD_MOVE_CURSOR instead.
 
 \subsubsection{Device Operation: Request header}\label{sec:Device Types / GPU Device / Device Operation / Device Operation: Request header}
 
-All requests and responses on the virt queues have a fixed header
+All requests and responses on the virtqueues have a fixed header
 using the following layout structure and definitions:
 
 \begin{lstlisting}
@@ -345,7 +345,7 @@ displays are arranged (i.e. which is -- for example -- the left
 display).
 
 The \field{enabled} field is set when the user enabled the display.
-It is roughly the same as the connected state of a phyiscal display
+It is roughly the same as the connected state of a physical display
 connector.
 
 \item[VIRTIO_GPU_CMD_GET_EDID] Retrieve the EDID data for a given

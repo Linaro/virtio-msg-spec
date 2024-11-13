@@ -1,10 +1,8 @@
-# Thanks for proposing a change to the Virtual I/O Device (VIRTIO) specification!
-The VIRTIO TC is not yet accepting pull requests at this time as they are not
-integrated with our voting system.
+# Thanks for proposing a change to the virtio-msg specification
 
-Instead, please
-- [] Propose the spec change (preferably as a patch) on the [mailing list](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=virtio#feedback).
-- [] Open an [issue](https://github.com/oasis-tcs/virtio-spec/issues),
-     including the link to the proposal in the [mailing list archives](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=virtio#feedback).
+This is not the same as proposing a change to the VirtIO spec. This
+repository is intended for preparing the virtio-msg transport
+specification before it's submission to the VIRTIO TC.
 
-The TC will vote and apply the change.
+If your intention was to suggestion to change to the upstream please
+propose the change as a patch to the [mailing list](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=virtio#feedback).

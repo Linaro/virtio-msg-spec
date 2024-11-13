@@ -1,0 +1,27 @@
+name: Deploy current state
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tools
+        run: |
+          sudo apt install texlive-full
+
+      - name: Build Docs
+        run: |
+          make local-all
+          echo ${{ github.sha }} > Release.txt
+
+      - name: Create a Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: working-draft
+          files: |
+            Release.txt
+            virtio-v1.4-wd01.pdf

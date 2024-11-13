@@ -493,7 +493,7 @@ identical \field{next_off} and \field{next_wrap} values.
 \section{Exporting Objects}\label{sec:Basic Facilities of a Virtio Device / Exporting Objects}
 
 When an object created by one virtio device needs to be
-shared with a seperate virtio device, the first device can
+shared with a separate virtio device, the first device can
 export the object by generating a UUID which can then
 be passed to the second device to identify the object.
 
@@ -503,11 +503,12 @@ types. It is RECOMMENDED that devices generate version 4
 UUIDs as specified by \hyperref[intro:rfc4122]{[RFC4122]}.
 
 \input{admin.tex}
+\input{device-parts.tex}
 
 \chapter{General Initialization And Device Operation}\label{sec:General Initialization And Device Operation}
 
 We start with an overview of device initialization, then expand on the
-details of the device and how each step is preformed.  This section
+details of the device and how each step is performed.  This section
 is best read along with the bus-specific section which describes
 how to communicate with the specific device.
 
@@ -649,7 +650,7 @@ defined in this standard.
 
 Discovering what devices are available and their type is bus-dependent.
 
-\begin{tabular} { |l|c| }
+\begin{longtable} { |l|c| }
 \hline
 Device ID  &  Virtio Device    \\
 \hline \hline
@@ -737,9 +738,15 @@ Device ID  &  Virtio Device    \\
 \hline
 44         &   ISM device \\
 \hline
-45         &   SPI master \\
+45         &   SPI controller \\
 \hline
-\end{tabular}
+46         &   TEE device \\
+\hline
+47         &   CPU balloon device \\
+\hline
+48         &   Media device \\
+\hline
+\end{longtable}
 
 Some of the devices above are unspecified by this document,
 because they are seen as immature or especially niche.  Be warned
@@ -767,6 +774,8 @@ them no further.
 \input{device-types/scmi/description.tex}
 \input{device-types/gpio/description.tex}
 \input{device-types/pmem/description.tex}
+\input{device-types/can/description.tex}
+\input{device-types/spi/description.tex}
 
 \chapter{Reserved Feature Bits}\label{sec:Reserved Feature Bits}
 

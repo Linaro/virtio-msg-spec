@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SPECDOC=${SPECDOC:-`cat REVISION`}
-./make-setup-generated.sh "$SPECDOC"
+./make-setup-generated.sh "$SPECDOC" $1
 
 cp virtio-html.tex $SPECDOC.tex
 

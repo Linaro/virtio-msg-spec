@@ -2,7 +2,7 @@
 
 Packed virtqueues is an alternative compact virtqueue layout using
 read-write memory, that is memory that is both read and written
-by both host and guest.
+by both the device and the driver.
 
 Use of packed virtqueues is negotiated by the VIRTIO_F_RING_PACKED
 feature bit.
@@ -194,7 +194,7 @@ single used descriptor corresponds to the whole list.
 
 The device limits the number of descriptors in a list through a
 transport-specific and/or device-specific value. If not limited,
-the maximum number of descriptors in a list is the virt queue
+the maximum number of descriptors in a list is the virtqueue
 size.
 
 \subsection{Next Flag: Descriptor Chaining}
