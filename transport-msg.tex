@@ -1,0 +1,2168 @@
+\section{Virtio Over Messages}\label{sec:Virtio Transport Options / Virtio Over Messages}
+
+\newcommand{\conceptref}[1]{\hyperref[sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / #1]{#1}}
+\newcommand{\msgref}[1]{\hyperref[sec:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_#1]{VIRTIO_MSG_#1}}
+\newcommand{\busref}[1]{\hyperref[sec:Virtio Transport Options / Virtio Over Messages / Bus Messages / BUS_MSG_#1]{BUS_MSG_#1}}
+\newcommand{\msgdef}[1]{\subsubsection{VIRTIO_MSG_#1}\label{sec:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_#1}}
+\newcommand{\busdef}[1]{\subsubsection{BUS_MSG_#1}\label{sec:Virtio Transport Options / Virtio Over Messages / Bus Messages / BUS_MSG_#1}}
+
+This section defines \textbf{virtio-msg}, a transport mechanism that encapsulates
+virtio operations as discrete message exchanges rather than relying on PCI or
+memory-mapped I/O regions. It separates bus-level functionality (e.g., device
+enumeration, hotplug events) from device-specific operations (e.g., feature
+negotiation, virtqueue setup), ensuring that a single, generic transport layer
+can be reused across multiple bus implementations.
+
+virtio-msg addresses several key objectives:
+
+\begin{itemize}
+  \item \textbf{Support multiple bus implementations:}
+  Systems can rely on various communication methods such as hypercalls, local
+  IPC, network channels, or device trees for enumerating devices. virtio-msg
+  defines a common transport interface suitable for any of these mechanisms.
+
+  \item \textbf{Reduce per-bus complexity:}
+  Buses can implement a fully message-based workflow (including optional
+  enumeration via \busref{GET_DEVICES} and hotplug via \busref{EVENT_DEVICE})
+  or they can discover and manage devices through
+  alternative means such as platform firmware data. In either case, they
+  forward transport messages to and from each device.
+
+  \item \textbf{Preserve virtio semantics:}
+  The transport leverages standard virtio concepts (features, configuration
+  space, virtqueues), so existing virtio drivers and device implementations can
+  integrate smoothly once a device is discovered.
+\end{itemize}
+
+\subsection{Basic Concepts}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts}
+
+The virtio-msg transport relies on a set of foundational concepts to ensure
+reusability across different bus implementations and flexibility in device
+capabilities. This section defines those concepts and clarifies how they apply,
+regardless of whether the bus leverages message-based enumeration or platform
+data for device discovery.
+
+\subsubsection{High-Level Architecture}
+
+virtio-msg operates around two layers:
+
+\begin{enumerate}
+  \item \textbf{Bus Layer}: A \emph{bus instance} exposes zero or more virtio
+        devices. It discovers available devices through mechanisms such as:
+    \begin{itemize}
+      \item Optional message-based queries (\busref{GET_DEVICES}),
+      \item External data sources (e.g., device tree, ACPI tables, hypervisor
+        firmware calls),
+      \item Dynamic hotplug notifications (optionally via \busref{EVENT_DEVICE}).
+    \end{itemize}
+    Once a device number is identified, regardless of discovery method, the bus
+    layer exposes that device number and availability state to the driver side
+    of the transport.
+
+  \item \textbf{Transport Layer}: After the bus knows about a device, the
+        virtio-msg transport handles all device-specific operations:
+    \begin{itemize}
+      \item Retrieving and setting features (\msgref{GET_DEVICE_FEATURES},
+        \msgref{SET_DRIVER_FEATURES}),
+      \item Accessing the device configuration space (\msgref{GET_CONFIG},
+        \msgref{SET_CONFIG}),
+      \item Setting up virtqueues (\msgref{SET_VQUEUE}, \msgref{RESET_VQUEUE}),
+      \item Managing status and runtime notifications (\msgref{SET_DEVICE_STATUS},
+        \msgref{EVENT_USED}, etc.).
+    \end{itemize}
+    These transport messages remain the same across different bus instances,
+    allowing a single virtio-msg driver component to function in multiple
+    environments.
+\end{enumerate}
+
+\subsubsection{Relationship Between Bus and Transport}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport}
+
+This subsubsection explains the division of responsibilities: the bus layer is
+the mandatory carrier that moves messages between driver and device endpoints
+(e.g., over IPC, shared memory with signaling or hardware messaging), while
+the virtio-msg transport defines the semantics of those messages.
+
+virtio-msg groups messages into two categories:
+
+\begin{description}
+  \item[\textbf{Bus Messages}:]
+    Intended for global bus operations such as enumerating device numbers
+    (\busref{GET_DEVICES}), managing device hotplug events (\busref{EVENT_DEVICE})
+    or checking peer responsiveness (\busref{PING}).
+    These standard bus messages are provided for convenience. Support for
+    each message is \emph{optional}. A bus binding selects which messages it
+    uses and may define alternative mechanisms for these functions.
+
+  \item[\textbf{Transport Messages}:]
+    Used for device-specific operations, such as:
+    \begin{itemize}
+      \item Retrieving or setting features (\msgref{GET_DEVICE_FEATURES},
+        \msgref{SET_DRIVER_FEATURES}),
+      \item Accessing device configuration (\msgref{GET_CONFIG},
+        \msgref{SET_CONFIG}),
+      \item Managing virtqueues (\msgref{SET_VQUEUE}, \msgref{RESET_VQUEUE}),
+      \item Handling device status and notifications (\msgref{SET_DEVICE_STATUS},
+        \msgref{EVENT_USED}, etc.).
+    \end{itemize}
+\end{description}
+
+This separation lets a bus remain minimal if it obtains device information from
+firmware tables, while still supporting fully message-based enumeration and
+hotplug when desired.
+
+\busnormative{\paragraph}{Bus Message Implementation}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport / Bus Messages}
+\begin{itemize}
+  \item A bus implementation MAY support any subset of \busref{GET_DEVICES},
+        \busref{PING}, and \busref{EVENT_DEVICE}, including none of them.
+  \item If a bus implementation supports one of these bus messages, it MUST
+        conform to the normative definition for that message.
+\end{itemize}
+
+\busnormative{\paragraph}{Transport Message Forwarding}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport / Transport Message Forwarding}
+\begin{itemize}
+  \item A bus implementation MUST validate the device number in each transport
+        message before forwarding it.
+  \item A bus implementation MUST relay each transport message to the device
+        number identified in the message header, regardless of how it
+        discovered or enumerated that device.
+  \item A bus implementation SHOULD treat transport messages as opaque apart
+        from enforcing generic transport limits, such as the advertised maximum
+        message size, and SHOULD NOT modify the transport payload.
+  \item If a bus implementation cannot validate or route a transport request
+        that expects a response, it MUST surface a transport-visible failure
+        for that request.
+  \item If a bus implementation cannot validate or route a one-way transport
+        event, it MAY drop the event or handle it according to
+        message-specific bus requirements.
+\end{itemize}
+
+\subsubsection{Known Bus Implementation Examples}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Known Bus Implementation Examples}
+
+This subsubsection lists informative references to documented bus bindings for
+virtio-msg.
+
+\begin{itemize}
+  \item \textbf{Virtio Message Bus over FF-A}: specified by Arm in
+        \hyperref[intro:FFA-BUS]{[FFA-BUS]}.
+\end{itemize}
+
+\subsubsection{System Topology}
+
+A virtio-msg system contains the following elements:
+
+\begin{itemize}
+  \item \textbf{Bus Instances and Devices}: Each bus instance advertises its
+        capabilities (e.g., transport revision, maximum message size) and
+        discovers devices via message-based queries or external data sources.
+        Every discovered device has a unique \emph{device number}.
+  \item \textbf{Driver}: Communicates with the bus to learn about
+        available devices. Once a device is recognized, the driver uses the
+        common transport messages to perform feature negotiation, configuration,
+        and virtqueue setup.
+  \item \textbf{Device}: Implements virtio device functionality and
+        responds to the transport messages. The bus forwards these messages to
+        the correct device instance based on device number.
+\end{itemize}
+
+\subsubsection{Transport Revisions and Maximum Message Size}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions}
+
+Each \textbf{virtio-msg bus instance} advertises the following to the transport
+layer:
+\begin{itemize}
+  \item \textbf{Transport revision}: the protocol version supported by the bus
+        instance (independent of the overall Virtio specification version).
+  \item \textbf{Maximum message size}: the largest message size (in bytes) that
+        can be carried per request or response, including the common header.
+  \item \textbf{Transport feature bits}: revision-specific optional features
+        implemented by the bus instance.
+\end{itemize}
+
+Transport feature bits are determined per bus instance. When both sides expose
+transport feature masks, the bus instance presents only the common subset as
+the effective transport feature mask for that bus instance.
+
+The mechanism for obtaining these parameters is implementation-defined and can
+vary between bus instances. Common approaches include:
+\begin{itemize}
+  \item Reading firmware or device-tree data that describes each bus instance,
+  \item Performing a message exchange during bus setup to retrieve the values,
+  \item Relying on per-bus configuration structures or driver-specific defaults.
+\end{itemize}
+
+\busnormative{\paragraph}{Advertising Transport Parameters}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Advertising Transport Parameters}
+\begin{itemize}
+  \item Each bus instance MUST make its transport revision, maximum message
+        size, and transport feature bits available to the virtio-msg transport
+        before any transport messages are exchanged for that device.
+  \item A bus instance MUST expose transport feature bits independently of the
+        device feature blocks exchanged by \msgref{GET_DEVICE_FEATURES} and
+        \msgref{SET_DRIVER_FEATURES}.
+  \item A bus instance MUST advertise only the transport feature bits supported
+        by both sides of that bus instance.
+  \item A bus instance MUST apply the same limits to both driver-originated and
+        device-originated transport messages.
+  \item For an active device, a bus instance MUST treat the advertised
+        transport revision, maximum message size, and transport feature bits as
+        stable.
+  \item If these values change, a bus instance MUST notify the transport layer
+        and MUST require transport-layer revalidation before accepting
+        additional transport messages for the affected device.
+\end{itemize}
+
+\drivernormative{\paragraph}{Respecting Bus Limits}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Driver Limits}
+\begin{itemize}
+  \item A driver MUST NOT send a transport message whose total size exceeds the
+        maximum message size advertised for the target bus instance.
+  \item A driver MUST NOT rely on transport features or messages that require a
+        higher transport revision than the bus instance reports.
+\end{itemize}
+
+\devicenormative{\paragraph}{Respecting Bus Limits}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Device Limits}
+\begin{itemize}
+  \item A device MUST ensure its responses and device-originated messages do
+        not exceed the maximum message size advertised by the bus instance that
+        relays them.
+  \item A device MUST NOT require transport features or messages beyond the
+        transport revision reported by the bus instance, and MUST respond with
+        an error or ignore requests for unsupported features.
+\end{itemize}
+
+\paragraph{virtio-msg transport revisions}
+
+The following table lists the currently defined virtio-msg transport revisions
+and their protocol-defined maximum message sizes. Transport feature bits are
+defined separately in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Transport Feature Bits}.
+
+\begin{tabular}{ |l|l|l| }
+\hline
+\field{revision} & \field{maximum size} & remarks \\
+\hline \hline
+1        & 52-65535    & Virtio Message Revision 1 \\
+\hline
+\end{tabular}
+
+The table reflects the protocol-defined maximum size; the recommended
+advertised maximum remains 264 bytes for interoperability.
+
+Note that a change in the virtio standard does not necessarily
+correspond to a change in the virtio-msg transport revision.
+
+The maximum message size is specified from the transport-layer point of view
+and includes the 8-byte common header plus payload. Any extra encapsulation
+imposed by the underlying bus (for example, a framing header) does not count
+against this limit. Today the largest practical inline configuration payload is
+244 bytes: messages such as GET_CONFIG and SET_CONFIG use 12 bytes of
+message-specific fields, leaving up to 244 bytes for device configuration data
+in one transfer when the recommended 264-byte maximum message size is used.
+Larger configuration regions can be accessed through multiple exchanges without
+requiring a larger per-message limit.
+
+\busnormative{\paragraph}{Message Size Bounds}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Message Size}
+\begin{itemize}
+  \item A bus implementation MUST advertise a maximum message size of at least
+        52 bytes.
+  \item A bus implementation SHOULD NOT advertise a maximum message size that
+        exceeds 264 bytes (256-byte payload plus the common header).
+\end{itemize}
+
+\paragraph{Versioning and Forward Compatibility}
+
+A higher transport revision or additional transport feature bits extend the
+protocol with new messages or capabilities. Interoperability across revisions
+relies on retaining the mandatory messages and semantics of prior revisions,
+as specified by the driver, device, and bus requirements below.
+
+\drivernormative{\paragraph}{Revision Compatibility}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Driver}
+\begin{itemize}
+  \item A driver that negotiates transport revision $N$ MUST implement all
+        mandatory driver behavior defined for revisions $1$ through $N$.
+  \item If a driver receives a device-originated message or feature indication
+        that requires an unsupported revision or transport feature, it MUST
+        ignore the message (or treat the request as failed) and MUST NOT act on
+        partially understood data.
+\end{itemize}
+
+\devicenormative{\paragraph}{Revision Compatibility}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Device}
+\begin{itemize}
+  \item A device that advertises transport revision $N$ MUST implement all
+        mandatory device behavior defined for revisions $1$ through $N$.
+  \item If a device receives a driver request that relies on an unsupported
+        revision or transport feature, it MUST reject the request using the
+        message-specific error mechanism (if any) or silently ignore it.
+\end{itemize}
+
+\busnormative{\paragraph}{Revision Compatibility}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Bus}
+\begin{itemize}
+  \item A bus instance that advertises transport revision $N$ MUST satisfy every
+        bus requirement defined for revisions $1$ through $N$.
+  \item If a bus instance cannot forward a message because it requires an
+        unsupported revision or transport feature, it MUST surface a transport
+        error or drop the message without forwarding it.
+\end{itemize}
+
+\subsubsection{Transport Feature Bits}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Transport Feature Bits}
+
+Transport feature bits are bus-instance parameters. They are advertised as part
+of the transport parameters described in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions}
+and are not carried in the device feature blocks exchanged by
+\msgref{GET_DEVICE_FEATURES} and \msgref{SET_DRIVER_FEATURES}.
+
+The following transport feature bits are defined:
+
+\begin{tabular}{|l|l|p{7cm}|}
+\hline
+Bit & Minimum revision & Meaning \\
+\hline
+0 & 1 & Select strict configuration semantics profile. \\
+\hline
+\end{tabular}
+
+Bit 0 is named \texttt{VIRTIO\_MSG\_F\_STRICT\_CONFIG\_GENERATION}.
+When this feature is not advertised for the bus instance, the baseline profile
+applies. See
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}.
+
+\subsubsection{Device Numbers and Enumeration}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts /
+Device Numbers}
+
+Each virtio-msg bus instance contains zero or more \emph{devices}, identified
+by a 16-bit \textbf{device number}. The device number is a bus-assigned
+identifier and is distinct from the virtio device ID (device type) returned by
+\msgref{GET_DEVICE_INFO}. Buses discover these device numbers through
+mechanisms such as:
+\begin{itemize}
+  \item \textbf{Message-Based Enumeration}: Using \busref{GET_DEVICES} to query
+        which numbers exist (optional).
+  \item \textbf{Platform Data}: A device tree, ACPI tables, or hypervisor calls
+        might inform the bus of available device numbers and their properties.
+\end{itemize}
+
+The 16-bit device-number space provides roughly 65k device slots per bus
+instance. Deployments that require more devices can instantiate multiple bus
+instances and distribute devices across those instances.
+
+Once a bus confirms that a device number is valid, regardless of the discovery
+method, it exposes that number to the driver side of the transport. The driver
+then issues \msgref{GET_DEVICE_INFO} as the first transport message for that
+device number before other transport operations.
+
+\busnormative{\paragraph}{Device Number Assignment}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Numbers / Assignment}
+\begin{itemize}
+  \item A bus implementation MUST assign a unique device number to every
+        device on a given bus instance.
+  \item A bus implementation MUST prevent requests, responses, or events
+        associated with a removed device from affecting a subsequent device
+        assigned the same device number.
+  \item A bus implementation MUST provide the driver with sufficient
+        information, either via \busref{GET_DEVICES}, \busref{EVENT_DEVICE},
+        or equivalent platform data, to discover each valid device number.
+\end{itemize}
+
+\subsubsection{Configuration Semantics Profiles}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}
+
+virtio-msg defines two configuration semantics profiles selected by the
+transport feature bits advertised for the bus instance:
+\begin{itemize}
+  \item \textbf{Baseline profile}: applies when
+        \texttt{VIRTIO\_MSG\_F\_STRICT\_CONFIG\_GENERATION} is not advertised for
+        the bus instance.
+  \item \textbf{Strict profile}: applies when
+        \texttt{VIRTIO\_MSG\_F\_STRICT\_CONFIG\_GENERATION} is advertised for the
+        bus instance.
+\end{itemize}
+
+The profiles apply to \msgref{GET_CONFIG}, \msgref{SET_CONFIG}, and
+\msgref{EVENT_CONFIG}.
+
+\drivernormative{\paragraph}{Configuration Semantics Profiles}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles / Driver}
+\begin{itemize}
+  \item A driver MUST determine the active profile before issuing
+        \msgref{SET_CONFIG}.
+  \item A driver MUST determine the active profile from the transport feature
+        bits advertised for the target bus instance, not from
+        \msgref{GET_DEVICE_FEATURES}/\msgref{SET_DRIVER_FEATURES}.
+  \item In any profile, a driver SHOULD use generation values from
+        \msgref{GET_CONFIG} and \msgref{EVENT_CONFIG} to detect concurrent
+        configuration changes and SHOULD re-read required configuration until
+        it observes a stable generation value.
+  \item In baseline profile, a driver MUST set \field{generation} to 0 in
+        \msgref{SET_CONFIG} requests.
+  \item In baseline profile, upon \msgref{EVENT_CONFIG}, a driver SHOULD refresh
+        required configuration via \msgref{GET_CONFIG} when event data is
+        omitted or when \field{offset} and \field{length} are zero.
+  \item In strict profile, a driver MUST track generation values from
+        \msgref{GET_CONFIG}/\msgref{EVENT_CONFIG} and MUST include its most
+        recent generation value in \msgref{SET_CONFIG}.
+  \item In strict profile, if a \msgref{SET_CONFIG} request is rejected due to a
+        mismatched generation count, a driver SHOULD issue \msgref{GET_CONFIG}
+        to obtain the latest configuration data and generation count before
+        retrying.
+  \item In any profile, a driver MUST NOT assume generation count is monotonic
+        or preserved across device resets.
+\end{itemize}
+
+\devicenormative{\paragraph}{Configuration Semantics Profiles}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles / Device}
+\begin{itemize}
+  \item A device MUST apply the configuration semantics profile selected by the
+        transport feature bits advertised for the bus instance that relays its
+        messages.
+  \item In any profile, a device MUST provide its current generation count in
+        \msgref{GET_CONFIG} responses, \msgref{SET_CONFIG} responses, and
+        \msgref{EVENT_CONFIG} messages.
+  \item In any profile, a device MUST change \field{generation} whenever there
+        is a possibility that two accesses to the device configuration space
+        can observe different versions of that space, as described in
+        \ref{sec:Basic Facilities of a Virtio Device / Device Configuration Space}.
+  \item In baseline profile, a device MUST ignore request \field{generation} in
+        \msgref{SET_CONFIG}. For requests that are otherwise valid, the device
+        MUST apply the write regardless of request \field{generation} and MUST
+        NOT reject \msgref{SET_CONFIG} due solely to generation mismatch.
+  \item A device MUST NOT send \msgref{EVENT_CONFIG} solely because a
+        \msgref{SET_CONFIG} request carried a mismatched \field{generation}
+        value.
+  \item In any profile, a device MAY send a generic
+        \msgref{EVENT_CONFIG} notification with \field{offset} and
+        \field{length} set to 0 and no \field{data} when the affected
+        configuration change cannot be represented as a bounded range
+        (for example, when only an equivalent out-of-band notification is
+        available without affected-range details).
+  \item A device transport layer implementation MUST originate
+        \msgref{EVENT_CONFIG} whenever it changes configuration data in a way
+        that is visible to the driver.
+  \item A device transport layer implementation MUST originate
+        \msgref{EVENT_CONFIG} for status only when a device-originated
+        asynchronous status change requires asynchronous reporting to the
+        driver.
+  \item A device MUST NOT send \msgref{EVENT_CONFIG} solely because the driver
+        wrote status via \msgref{SET_DEVICE_STATUS}; such writes MAY be
+        followed by \msgref{EVENT_CONFIG} only if a distinct
+        device-originated asynchronous status change occurs afterward.
+  \item If \msgref{EVENT_CONFIG} reports only a status change, a device MUST
+        set \field{offset} and \field{length} to 0.
+  \item In any profile, a device MAY reset generation count, including when it
+        resets internal state.
+  \item In strict profile, if a \msgref{SET_CONFIG} request includes a
+        \field{generation} count that does not match the device's current
+        count, the device MUST reject the request.
+  \item If updated configuration data cannot fit in a single
+        \msgref{EVENT_CONFIG}, a device SHOULD send an \msgref{EVENT_CONFIG}
+        without configuration data and MUST make updated data available via
+        \msgref{GET_CONFIG}. In strict profile, the device SHOULD set
+        \field{offset}/\field{length} to the affected range.
+\end{itemize}
+
+This subsection defines baseline and strict semantics together so that
+generation and mismatch behavior remains explicit and consistent across message
+definitions.
+
+\subsubsection{Device Feature Blocks}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks}
+
+Device feature bits are organized into 32-bit blocks accessed by
+\msgref{GET_DEVICE_FEATURES} and \msgref{SET_DRIVER_FEATURES}. Each block
+represents up to 32 feature bits:
+
+\begin{itemize}
+  \item \textbf{Block Index}: The starting block (e.g., block 0 for
+        features 0-31, block 1 for features 32-63, etc.).
+  \item \textbf{Number of Blocks}: How many blocks the driver wishes to retrieve
+        or modify in a single message.
+  \item \textbf{Feature Data}: The 32-bit values representing either the
+        device-offered feature bits or the driver-selected subset for the
+        selected blocks.
+\end{itemize}
+
+Virtio-msg device feature blocks may include core virtio feature bits. They are
+distinct from the transport feature bits defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Transport Feature Bits}.
+This transport does not support VIRTIO\_F\_NOTIF\_CONFIG\_DATA; device feature
+negotiation requirements are defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features}.
+
+\devicenormative{\paragraph}{Device Feature Blocks}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks / Device}
+\begin{itemize}
+  \item When \msgref{GET_DEVICE_FEATURES} covers blocks that extend beyond the
+        features a device implements, the device MUST return zero for the
+        feature data in those positions.
+  \item After processing \msgref{SET_DRIVER_FEATURES}, a device MUST update
+        only the driver-selected feature blocks addressed by that request and
+        MUST leave all other driver-selected feature blocks unchanged.
+  \item A device MUST report the device-offered feature set in
+        \msgref{GET_DEVICE_FEATURES} responses and MUST NOT reflect the
+        driver-selected subset in those responses.
+\end{itemize}
+
+\subsubsection{Error Signaling}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling}
+
+Transport errors can arise from malformed messages, routing failures inside a
+bus implementation, or faults while processing a valid request in the device
+transport layer.
+Implementations should handle such faults locally where possible. For
+transport request/response messages that use the existing wire format, the
+completion contract is deterministic:
+\begin{itemize}
+  \item For a valid, supported request accepted for processing, completion is
+        exactly one protocol response.
+  \item If routing, policy, timeout, or completion constraints prevent that
+        response, completion is a transport-visible failure surfaced by the
+        bus implementation.
+  \item One-way events do not define a completion outcome. Unless a
+        message-specific rule states otherwise, they MAY be dropped without a
+        protocol error response or transport-visible failure.
+  \item Malformed or unsupported transport messages are discarded without
+        transport error responses; for request/response messages, the
+        originating side observes completion according to the bounded
+        transport-visible failure policy.
+\end{itemize}
+
+Bus bindings may define failure signaling exchanged only between bus
+implementations and completion of underlying transfers. For a transport
+request, this signaling can cause a local failure completion without waiting
+for a timeout. Such signaling does not add transport messages or change the
+request-completion contract.
+
+\busnormative{\paragraph}{Error Handling}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Bus}
+\begin{itemize}
+  \item A bus implementation MUST apply a bounded completion policy for each
+        valid, supported transport request that expects a response.
+  \item A bus implementation MUST complete each such request with exactly one
+        of the following outcomes:
+    \begin{itemize}
+      \item one protocol response, or
+      \item a transport-visible failure when routing, policy, timeout, or
+            completion constraints prevent response delivery.
+    \end{itemize}
+  \item A bus implementation MUST NOT wait indefinitely for response delivery.
+  \item A bus implementation MUST treat malformed headers or unsupported bus
+        \field{msg_id} values in bus messages as invalid and MUST discard them.
+        A bus binding MAY define bus-internal failure reporting or underlying
+        transfer completion for such messages. A bus implementation MAY log
+        the condition for diagnostics.
+  \item A bus implementation MUST consume bus-specific failure signaling
+        within the bus and MUST NOT deliver it to the transport as an inbound
+        transport message.
+  \item A bus implementation MUST NOT validate transport \field{msg_id} values;
+        unsupported transport \field{msg_id} handling is performed by the
+        transport layer.
+  \item A bus implementation MUST NOT generate error responses to event
+        (one-way) messages. This does not prohibit bus-internal completion of
+        an underlying transfer.
+  \item Unless a message-specific rule states otherwise, a bus implementation
+        MAY discard an event without surfacing a completion outcome.
+\end{itemize}
+
+\drivernormative{\paragraph}{Error Handling}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Driver}
+\begin{itemize}
+  \item A driver transport layer implementation receiving a malformed or
+        unsupported transport message MUST discard it without producing a
+        transport protocol response.
+  \item A driver MUST apply a bounded timeout and retry policy when waiting for
+        transport-request completion, including reset-completion checks.
+  \item If that bounded policy is exhausted, a driver MUST treat the request as
+        failed and MUST perform recovery using the reset and status semantics
+        defined in
+        \ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation}.
+\end{itemize}
+
+\devicenormative{\paragraph}{Error Handling}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Device}
+\begin{itemize}
+  \item A device transport layer implementation receiving a malformed or
+        unsupported transport message MUST discard it without producing a
+        transport protocol response.
+  \item Recovery actions taken in response to an error (such as retries,
+        selective resets, or device removal) MUST follow the normative reset and
+        status semantics defined in
+        \ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation}.
+\end{itemize}
+
+This specification does not define a dedicated transport error-reporting
+message. Transport-visible failure is surfaced as a local bus completion
+outcome for a request.
+
+Some bus implementations may reject requests that violate their local policy
+or that are not valid for the current device state. In such cases, the bus may
+report a local failure completion to the originating transport.
+
+\subsubsection{Endianness}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Endianness}
+
+Unless otherwise stated, all numeric fields defined for virtio-msg messages use
+little-endian encoding.
+
+\drivernormative{\paragraph}{Endianness}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Endianness / Driver}
+\begin{itemize}
+  \item A driver MUST encode and decode the common header and payload fields
+        defined by this transport using little-endian byte order.
+\end{itemize}
+
+\devicenormative{\paragraph}{Endianness}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Endianness / Device}
+\begin{itemize}
+  \item A device MUST emit and consume the common header and payload fields
+        defined by this transport using little-endian byte order.
+\end{itemize}
+
+\subsubsection{Memory Addresses}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses}
+
+The address fields in \msgref{GET_VQUEUE}, \msgref{SET_VQUEUE}, and
+\msgref{GET_SHM} use the address space and encoding defined by the bus binding.
+These can be physical addresses or bus-specific representations of memory
+locations. Memory alignment requirements apply to the identified memory, not
+necessarily to the encoded address value.
+
+\busnormative{\paragraph}{Memory Addresses}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses / Bus}
+\begin{itemize}
+  \item A bus implementation MUST define the address space and encoding used by
+        the address fields in \msgref{GET_VQUEUE}, \msgref{SET_VQUEUE}, and
+        \msgref{GET_SHM}, including any translation required to access the
+        identified memory.
+\end{itemize}
+
+\subsubsection{Common Message Format}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format}
+
+All virtio-msg exchanges, whether \emph{bus messages} or \emph{transport
+messages}, begin with an 8-byte header followed by an optional payload. The
+fields below describe the wire format for that header.
+
+The header layout is:
+\begin{lstlisting}
+struct virtio_msg_header {
+    u8       type;      /* request/response + bus/transport */
+    u8       msg_id;    /* message id */
+    le16     dev_num;   /* target device number; bus messages MUST use 0 */
+    le16     token;     /* bus-managed correlation identifier */
+    le16     msg_size;  /* total size: header (8) + payload */
+    u8       payload[];
+};
+\end{lstlisting}
+
+Field semantics:
+\begin{itemize}
+  \item \field{type}:
+    \begin{itemize}
+  \item Bit[0]: 0=request, 1=response. Messages whose \field{msg_id} identifies
+        an event MUST use Bit[0]=0 and MUST NOT be sent as responses.
+  \item Bit[1]: 0=transport message, 1=bus message. This bit selects whether
+        \field{msg_id} is interpreted in the transport-message namespace or the
+        bus-message namespace.
+  \item Bits[2..7]: reserved for future use.
+    \end{itemize}
+  \item \field{msg_id}: Message ID identifying the message definition. Ranges
+    are defined in
+    \ref{sec:Virtio Transport Options / Virtio Over Messages / Transport Messages}
+    and
+    \ref{sec:Virtio Transport Options / Virtio Over Messages / Bus Messages}.
+    \begin{itemize}
+  \item Bits[0..5]: message number within the selected range.
+  \item Bit[6]: 0=request/response message, 1=event.
+  \item Bit[7]: 0=standardized message ID, 1=implementation-defined message ID.
+    \end{itemize}
+  \item \field{dev_num}: For transport messages, the device number that should
+    receive the message. Device number 0 is not reserved for transport
+    messages. Bus messages are identified by \field{type} and MUST carry
+    \field{dev_num}=0.
+  \item \field{token}: Correlation identifier owned and managed by the bus.
+    Drivers and devices treat this field as opaque. A bus implementation MAY
+    transparently insert or overwrite \field{token} values on the request leg,
+    response leg, or both to correlate concurrent requests and responses or to
+    compensate for transport-specific reordering. A device copies the request
+    \field{token} into the matching response before any bus-side rewrite.
+  \item \field{msg_size}: Total size in bytes of the complete message (header
+    plus payload).
+  \item \field{payload}: Operation-specific data. If a bus introduces extra
+    padding bytes, those bytes are not part of the payload semantics.
+\end{itemize}
+
+\drivernormative{\paragraph}{Common Header}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Driver}
+\begin{itemize}
+  \item A driver MUST set bits 2..7 of \field{type} to zero and MUST treat them
+        as reserved when parsing received headers.
+  \item A driver MUST ensure \field{msg_size} reflects the total message length
+        (header plus payload) and MUST NOT exceed the maximum message size
+        advertised by the bus instance.
+  \item When sending a transport message, a driver MUST set \field{dev_num} to
+        the intended device number.
+  \item If a driver introduces padding bytes that become part of the transport
+        payload, it MUST set those bytes to zero.
+  \item A driver MUST treat the \field{token} field as opaque and MUST NOT rely
+        on its value when processing received messages.
+\end{itemize}
+
+\devicenormative{\paragraph}{Common Header}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Device}
+\begin{itemize}
+  \item A device MUST set bits 2..7 of \field{type} to zero in transmitted
+        messages and MUST ignore those bits on receive.
+  \item A device MUST ensure \field{msg_size} reflects the total message length
+        (header plus payload) and does not exceed the bus's advertised maximum.
+  \item When sending a transport message, a device MUST set \field{dev_num} to
+        its own device number.
+  \item A device MUST ignore padding bytes that are documented as bus-specific
+        and MUST zero any such bytes it introduces into the transport payload.
+  \item A device MUST treat the \field{token} field as opaque and MUST NOT rely
+        on its value when processing received messages.
+  \item For each request/response message pair, a device MUST copy the
+        \field{token} value from the received request into the matching
+        response.
+\end{itemize}
+
+\busnormative{\paragraph}{Common Header}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Bus}
+\begin{itemize}
+  \item A bus implementation MUST deliver bus messages with \field{dev_num}=0
+        and MUST NOT alter \field{dev_num} for transport messages beyond the
+        routing needed to reach the addressed device.
+  \item A bus implementation MUST set bits 2..7 of \field{type} to zero when
+        generating bus messages and MUST ignore those bits when forwarding
+        transport messages.
+  \item If the bus adds framing or padding bytes around the common header or
+        payload, it MUST set those bytes to zero before delivering the message
+        to the opposite side and MUST present the same zero padding when the
+        opposite side reads a message.
+  \item A bus implementation owns the \field{token} field; it MAY insert or
+        overwrite values for correlation purposes and MUST ensure that any such
+        use is transparent to drivers and devices.
+  \item A bus implementation MAY rewrite \field{token} values on the request
+        path, response path, or both, provided this remains transparent to
+        drivers and devices.
+  \item A bus implementation MUST ensure that any use of \field{token} for
+        request/response correlation or to compensate for transport-specific
+        reordering remains transparent to drivers and devices.
+\end{itemize}
+
+A message originator MUST transmit reserved header bits and unspecified header
+values as zero, and receivers MUST ignore those bits on receive to preserve
+forward compatibility.
+
+Virtqueue descriptors and buffer data are exchanged via shared memory or other
+DMA-accessible memory, as with other virtio transports. Transport messages are
+used for control operations, configuration, and notifications, not for
+virtqueue data transfer.
+
+\subsubsection{Message Ordering}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Ordering}
+
+Transport messages fall into two classes: requests (which expect responses) and
+events (which are one-way). Drivers and devices do not interpret the
+\field{token} field directly. A bus implementation MAY have multiple
+outstanding requests for the same device number and MAY use the bus-owned
+\field{token} field to correlate each response with its originating request.
+The device copies the received request token into the matching response, as
+required by
+\ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Device}.
+The bus may transparently rewrite token values on either leg while preserving
+request/response correlation for both endpoints.
+Events are asynchronous notifications and MAY be delivered at any time
+relative to request/response traffic. Messages for different device numbers MAY
+be interleaved by the bus.
+Some response payloads repeat request parameters (for example, indices or
+offsets). Drivers and devices MAY use these repeated values for validation,
+but request/response association is determined by the bus implementation's
+correlation state, not by response ordering or by those repeated values.
+
+\busnormative{\paragraph}{Message Ordering}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Ordering / Bus}
+\begin{itemize}
+  \item For each transport request that expects a response, a bus
+        implementation MUST preserve sufficient correlation state to complete
+        that request with exactly one protocol response or one
+        transport-visible failure.
+  \item A bus implementation MAY forward multiple requests concurrently for the
+        same device number.
+  \item For each driver/device pair, a bus implementation MUST preserve request
+        order when presenting requests to the device-side transport.
+  \item For concurrently outstanding requests, a bus implementation MAY deliver
+        responses in an order different from the corresponding request order,
+        provided it correlates each response with the originating request
+        before exposing completion to the driver side.
+  \item A bus implementation MUST NOT delay an event solely to preserve a
+        request-before-event or response-before-event ordering rule.
+\end{itemize}
+
+\devicenormative{\paragraph}{Message Ordering}{Virtio Transport Options / Virtio Over Messages / Basic Concepts / Ordering / Device}
+\begin{itemize}
+  \item A device MUST process requests in receive order for each driver/device
+        pair.
+  \item A device MUST send exactly one response for each valid, supported
+        request it receives and accepts for processing.
+  \item For malformed or unsupported requests, a device MUST discard the
+        request without sending a protocol response.
+\end{itemize}
+
+\subsection{Device Discovery}\label{sec:Virtio Transport Options / Virtio Over Messages / Device Discovery}
+
+A virtio-msg implementation can learn about devices via bus-level enumeration
+(e.g., \busref{GET_DEVICES}), platform data (e.g., device tree, ACPI), or
+hypervisor/firmware interfaces. The following informative text describes
+typical flows; the normative obligations follow.
+
+Bus implementations discover their devices through a mix of platform data,
+hypervisor-provided enumeration, or message-based queries such as
+\busref{GET_DEVICES}. This specification defines \busref{GET_DEVICES} for
+environments that prefer message-driven enumeration, but it does not require
+its use when equivalent information is already known out-of-band.
+
+\busnormative{\paragraph}{Device Discovery}{Virtio Transport Options / Virtio Over Messages / Device Discovery / Bus}
+\begin{itemize}
+  \item A bus implementation MUST ensure that every device number it exposes to
+        the driver has been validated via either platform data or a successful
+        query such as \busref{GET_DEVICES}.
+  \item Once a device number is deemed present, the bus implementation MUST
+        expose that number to the driver side so the driver can issue
+        \msgref{GET_DEVICE_INFO}.
+  \item If a bus implementation provides an alternative enumeration mechanism
+        (e.g., ACPI, device tree), it MAY omit \busref{GET_DEVICES} provided the
+        alternative delivers equivalent information to the driver.
+\end{itemize}
+
+\subsection{Device Initialization}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization}
+
+After a bus has identified a virtio-msg device (whether by message-based
+enumeration or platform-specific discovery), the driver undertakes a series of
+steps to configure and ready the device for normal operation. This section
+details the recommended order of operations and the associated messages.
+
+\subsubsection{Initialization Flow Overview}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Overview}
+
+A typical device initialization flow includes:
+\begin{enumerate}
+  \item \textbf{Early Discovery Exception:}
+    Query static parameters with \msgref{GET_DEVICE_INFO}. This is the only
+    transport message exception allowed before normal initialization sequencing.
+  \item \textbf{Reset And Baseline Status:}
+    Reset the device and transition status through ACKNOWLEDGE then DRIVER via
+    \msgref{SET_DEVICE_STATUS}.
+  \item \textbf{Negotiate Device Features:}
+    Read device feature blocks via \msgref{GET_DEVICE_FEATURES}, decide which
+    to enable, and send the selected subset via one or more
+    \msgref{SET_DRIVER_FEATURES} requests. Verify FEATURES\_OK via
+    \msgref{SET_DEVICE_STATUS}. Transport feature bits are bus-instance
+    parameters and are determined separately from this per-device exchange.
+  \item \textbf{Device-Specific Setup:}
+    Read or write configuration data with
+    \msgref{GET_CONFIG}/\msgref{SET_CONFIG} using the active configuration
+    semantics profile defined in
+    \ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles},
+    then configure each virtqueue via \msgref{SET_VQUEUE} and verify settings
+    with \msgref{GET_VQUEUE}.
+  \item \textbf{Finalize Initialization:}
+    Use \msgref{SET_DEVICE_STATUS} to transition to DRIVER\_OK.
+\end{enumerate}
+
+After \msgref{GET_DEVICE_INFO}, a driver MUST follow the core virtio status
+progression for initialization: reset, ACKNOWLEDGE, DRIVER, feature
+negotiation and FEATURES\_OK verification, device-specific setup, then
+DRIVER\_OK.
+
+\drivernormative{\paragraph}{Initialization Flow}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Overview / Driver}
+\begin{itemize}
+  \item A driver MUST issue \msgref{GET_DEVICE_INFO} before attempting feature
+        negotiation or queue setup.
+  \item A driver MUST complete device feature negotiation via
+        \msgref{GET_DEVICE_FEATURES}/\msgref{SET_DRIVER_FEATURES}
+        and confirm the FEATURES\_OK state via \msgref{SET_DEVICE_STATUS} before
+        enabling virtqueues.
+  \item A driver MUST configure each virtqueue via \msgref{SET_VQUEUE} and
+        confirm its parameters (e.g., with \msgref{GET_VQUEUE}) before marking
+        the queue ready for I/O.
+  \item A driver MUST drive the device status transitions using
+        \msgref{SET_DEVICE_STATUS}, ensuring the device reaches DRIVER\_OK
+        before issuing normal I/O.
+\end{itemize}
+
+\subsubsection{Device Information}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Information}
+
+Once a device number is confirmed, the driver uses \msgref{GET_DEVICE_INFO} to
+retrieve static identification data (device ID, vendor ID), the number of
+feature blocks, configuration space size, maximum virtqueues, and any admin
+virtqueue details. This information determines which virtio driver should bind
+to the device, how many feature blocks to query, and how much configuration
+space is valid.
+
+\drivernormative{\paragraph}{Device Information}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Information / Driver}
+\begin{itemize}
+  \item A driver MUST use the configuration size reported via
+        \msgref{GET_DEVICE_INFO} to bound any offsets and lengths supplied in
+        \msgref{GET_CONFIG} and \msgref{SET_CONFIG} requests.
+\end{itemize}
+
+\subsubsection{Feature Negotiation}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features}
+
+Drivers read available device feature bits in 32-bit blocks using
+\msgref{GET_DEVICE_FEATURES}; the device returns the requested bitfields,
+padding with zeros for any out-of-range blocks. To enable selected device
+features, the driver sends the desired subset with one or more
+\msgref{SET_DRIVER_FEATURES} requests and then updates the device status via
+\msgref{SET_DEVICE_STATUS}, checking whether the FEATURES\_OK bit remains set.
+Transport feature bits are bus-instance
+parameters and are not part of this message exchange. Zero-padding and
+block-scoped update semantics are defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks}.
+
+\drivernormative{\paragraph}{Feature Negotiation}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features / Driver}
+\begin{itemize}
+  \item A driver MUST use \msgref{GET_DEVICE_FEATURES} to discover the feature
+        bits offered by the device and MUST write back only the features it
+        intends to enable via \msgref{SET_DRIVER_FEATURES}.
+  \item A driver MUST NOT negotiate VIRTIO\_F\_NOTIF\_CONFIG\_DATA.
+  \item After writing the desired features, the driver MUST attempt to set the
+        FEATURES\_OK bit using \msgref{SET_DEVICE_STATUS} and MUST check the
+        returned status to ensure the device accepted the set.
+\end{itemize}
+
+\devicenormative{\paragraph}{Feature Negotiation}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features / Device}
+\begin{itemize}
+  \item A device MUST NOT offer VIRTIO\_F\_NOTIF\_CONFIG\_DATA.
+  \item If the device cannot support the driver-selected feature set presented
+        before FEATURES\_OK is processed, it MUST clear the FEATURES\_OK bit in
+        the status returned by \msgref{SET_DEVICE_STATUS}.
+\end{itemize}
+
+\subsubsection{Device Configuration}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Configuration}
+
+Drivers use \msgref{GET_CONFIG} to read portions of the configuration space by
+supplying \field{offset} and \field{length}; the device returns the requested
+data plus the configuration generation field. Writing is performed via
+\msgref{SET_CONFIG}, which carries the same \field{offset}/\field{length} plus
+generation and new data.
+Generation-field handling follows the active profile defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles},
+with strict profile defining generation-mismatch rejection for \msgref{SET_CONFIG}.
+The message definitions for \msgref{GET_CONFIG} and \msgref{SET_CONFIG}
+define request validation and completion behavior, while
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}
+defines generation handling and \msgref{EVENT_CONFIG} semantics throughout
+initialization and operation.
+
+Configuration space is intended for device control and configuration data.
+When a device can instead expose data through a virtqueue, that mechanism is
+preferred; configuration reads and writes are asynchronous in virtio-msg and
+may require the driver to wait for a response.
+
+\subsubsection{Virtqueue Configuration}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Virtqueue Configuration}
+
+Drivers query virtqueue parameters with \msgref{GET_VQUEUE}, configure them via
+\msgref{SET_VQUEUE}, and optionally reset them using \msgref{RESET_VQUEUE} (if
+VIRTIO\_F\_RING\_RESET is negotiated). Each queue is typically configured by
+reading its maximum size, provisioning descriptor/available/used buffers, and
+then calling \msgref{SET_VQUEUE} with the chosen size, memory addresses, and
+queue-state operation in \field{flags}. A \msgref{GET_VQUEUE} response with
+\field{max_size}=0 indicates that the requested queue is not available for
+configuration. The message definitions for \msgref{GET_VQUEUE},
+\msgref{SET_VQUEUE}, and \msgref{RESET_VQUEUE} define the normative
+queue-availability, reconfiguration, and reset rules; this subsection
+describes the usual sequencing.
+
+\subsubsection{Status Information}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization / Status Information}
+
+Drivers query the device status via \msgref{GET_DEVICE_STATUS} to observe
+progress or detect errors, and they drive the Virtio status transitions via
+\msgref{SET_DEVICE_STATUS}. Writing zero to the status field requests a device
+reset, which can complete synchronously or asynchronously. The normative
+status-reporting and reset-completion rules are defined by
+\msgref{GET_DEVICE_STATUS} and \msgref{SET_DEVICE_STATUS}.
+
+\subsubsection{Finalizing Initialization}
+
+After configuring virtqueues and agreeing on features, the driver transitions
+the device to DRIVER\_OK (and any other required status bits) via
+\msgref{SET_DEVICE_STATUS}. At that point, the device is considered ready for
+normal virtqueue I/O.
+
+\drivernormative{\paragraph}{Final Status}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Finalizing Initialization / Driver}
+\begin{itemize}
+  \item A driver MUST set DRIVER\_OK via \msgref{SET_DEVICE_STATUS} only after
+        it has completed feature negotiation and initialized all required
+        virtqueues.
+  \item A driver MUST NOT queue normal I/O until the device reports a status
+        that includes DRIVER\_OK.
+  \item A driver MUST NOT supply buffers or send driver notifications for a
+        virtqueue until that queue has been configured via \msgref{SET_VQUEUE}.
+\end{itemize}
+
+\devicenormative{\paragraph}{Final Status}{Virtio Transport Options / Virtio Over Messages / Device Initialization / Finalizing Initialization / Device}
+\begin{itemize}
+  \item A device MUST NOT process normal virtqueue I/O until the driver has set
+        DRIVER\_OK.
+  \item Once DRIVER\_OK is set, the device MUST begin processing virtqueue
+        requests subject to the negotiated features and queue configurations.
+\end{itemize}
+
+\subsection{Device Operation}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation}
+
+Once a virtio-msg device is fully initialized (see
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Initialization}),
+the driver and device exchange messages to perform I/O and respond to
+configuration changes. This section details the primary messaging paths for
+\emph{driver notifications}, \emph{device notifications}, and the handling of
+runtime resets or shutdown sequences.
+
+\subsubsection{Driver Notifications}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Driver Notifications}
+
+Drivers and devices MAY select polling-only operation for virtqueue
+availability/completion handling. In polling-only mode, \msgref{EVENT_AVAIL}
+and \msgref{EVENT_USED} are not semantic requirements. When endpoints use
+event-driven notifications, drivers use \msgref{EVENT_AVAIL} to notify the
+device of available buffers. A driver-side bus implementation may forward
+\msgref{EVENT_AVAIL} in-band or translate it into an out-of-band notification
+mechanism. The receiving-side bus implementation can generate
+\msgref{EVENT_AVAIL} locally from that signal. Signaling and coalescing are
+specified by the bus binding. Generic bus delivery
+rules for runtime notifications are defined later in the transport-message
+overview.
+
+\drivernormative{\paragraph}{Driver Notifications}{Virtio Transport Options / Virtio Over Messages / Device Operation / Driver Notifications / Driver}
+\begin{itemize}
+  \item A driver and device MAY select polling-only operation for virtqueue
+        notification/completion handling.
+  \item If polling-only mode is selected, a driver MAY omit
+        \msgref{EVENT_AVAIL} and rely on polling for progress.
+  \item If polling-only mode is not selected, a driver MUST use
+        \msgref{EVENT_AVAIL} to notify the device of available buffers.
+\end{itemize}
+
+\subsubsection{Device Notifications}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications}
+
+\msgref{EVENT_CONFIG} and \msgref{EVENT_USED} provide asynchronous notifications
+from the device to the driver through the bus layer. Endpoints MAY select
+polling-only operation for used-buffer completion; in that mode,
+\msgref{EVENT_USED} is not a semantic requirement. A device-side transport
+implementation originates event-driven notifications using the standardized
+event messages. The local bus implementation may forward those events in-band
+or translate them into out-of-band signaling. The receiving-side bus
+implementation then forwards the originating event or generates the
+corresponding transport event locally. Signaling and virtqueue notification
+coalescing are specified by the bus binding. Generic bus delivery rules for
+runtime notifications are defined later in the transport-message overview.
+\devicenormative{\paragraph}{Device Notifications}{Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications / Device}
+\begin{itemize}
+  \item A device transport layer implementation MUST originate
+        \msgref{EVENT_USED} notification occurrences for used buffers on a
+        virtqueue when polling-only mode is not selected by the endpoints.
+  \item If polling-only mode is selected by the endpoints, a device MAY omit
+        \msgref{EVENT_USED} and rely on polling-visible queue state changes for
+        completion observation.
+\end{itemize}
+
+\drivernormative{\paragraph}{Device Notifications}{Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications / Driver}
+\begin{itemize}
+  \item Upon receiving \msgref{EVENT_CONFIG}, a driver SHOULD update its view of
+        the configuration using provided data (or by issuing
+        \msgref{GET_CONFIG} if necessary) before resuming normal I/O.
+  \item If \msgref{EVENT_CONFIG} provides no data and has
+        \field{offset} and \field{length} set to 0, a driver SHOULD treat it as
+        a generic configuration-change notification and refresh required
+        configuration via \msgref{GET_CONFIG}.
+  \item Upon receiving \msgref{EVENT_USED}, a driver MUST examine the indicated
+        virtqueue (for example, by reading the used ring) to reclaim completed
+        buffers.
+  \item If polling-only mode is selected by the endpoints, a driver MAY rely on
+        polling to observe used-buffer completion and MUST NOT require a
+        transport-visible \msgref{EVENT_USED} semantic occurrence.
+\end{itemize}
+
+\subsubsection{Configuration Changes During Operation}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Configuration Changes During Operation}
+
+Drivers may update configuration fields at runtime using \msgref{SET_CONFIG}
+when features such as device modes or limits need to change. Devices can also
+update configuration data autonomously but must signal those changes via
+\msgref{EVENT_CONFIG}. The same \msgref{GET_CONFIG}, \msgref{SET_CONFIG}, and
+\msgref{EVENT_CONFIG} rules continue to apply after initialization, including
+the active configuration semantics profile.
+
+\subsubsection{Virtqueue Changes During Operation}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Virtqueue Changes During Operation}
+
+Drivers may provision unused virtqueues later in the device lifetime by issuing
+\msgref{SET_VQUEUE}. Queue reconfiguration remains constrained to disabled
+queues. If a queue is enabled, the driver first resets that queue via
+\msgref{RESET_VQUEUE} when VIRTIO\_F\_RING\_RESET is negotiated. The same
+\msgref{GET_VQUEUE}, \msgref{SET_VQUEUE}, and \msgref{RESET_VQUEUE} rules
+continue to apply after initialization.
+
+\subsubsection{Device Reset and Shutdown}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Reset}
+
+Drivers request a device reset by writing 0 to \field{status} via
+\msgref{SET_DEVICE_STATUS}. Reset completion can be synchronous or
+asynchronous. A driver confirms completion from a
+\msgref{SET_DEVICE_STATUS} response \field{status} of 0 or by polling
+\msgref{GET_DEVICE_STATUS} until \field{status} is 0. A device may also signal
+that a reset is required by setting DEVICE\_NEEDS\_RESET in its
+\field{status} and reporting the updated \field{status} to the driver. After
+reset completion, the core virtio post-reset requirements continue to apply.
+The normative reset-completion rules are defined by
+\msgref{GET_DEVICE_STATUS} and \msgref{SET_DEVICE_STATUS}.
+
+\subsubsection{Hotplug and Removal}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Hotplug and Removal}
+
+Support for dynamic device addition and removal is optional. A bus binding
+defines which of these operations it supports.
+
+If the bus supports dynamic addition or removal of devices, it can advertise
+individual changes with \busref{EVENT_DEVICE} (ADDED or REMOVED), or signal a
+change requiring bus-specific handling with NO\_DATA. Some platforms may
+instead rely on external signals such as ACPI, device tree updates, or
+hypervisor events; virtio-msg does not mandate a specific mechanism.
+
+Device addition and removal are managed by the bus implementation. An addition
+indication reports that a device is accessible when announced; the device can
+subsequently become unavailable at any time. Bus bindings define removal
+sequencing, synchronization with driver initialization and operation, and the
+conditions for releasing associated resources. A bus binding may provide a
+coordinated removal mechanism.
+
+\busnormative{\paragraph}{Hotplug and Removal}{Virtio Transport Options / Virtio Over Messages / Device Operation / Hotplug and Removal / Bus}
+\begin{itemize}
+  \item A bus implementation that supports dynamic device addition or removal
+        and uses \busref{EVENT_DEVICE} to report those changes MUST report each
+        supported change with the corresponding ADDED or REMOVED event, or use
+        NO\_DATA to invoke bus-specific handling of those changes in place of
+        one or more individual events.
+  \item Regardless of how hotplug information is delivered, once a new device is
+        reported the bus implementation MUST expose the device number to the
+        driver side so the driver can issue \msgref{GET_DEVICE_INFO}. When a
+        device is removed, the bus implementation MUST notify the driver side.
+  \item A bus implementation that supports dynamic device addition or removal
+        MUST ensure that removal is handled safely during device initialization
+        and operation.
+  \item A bus implementation MUST complete transport requests outstanding when
+        a device is removed according to
+        \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Bus}.
+  \item A bus implementation that supports dynamic device addition or removal
+        MUST define how the driver side establishes that the removed device can
+        no longer access associated resources before those resources are
+        released.
+\end{itemize}
+
+\subsection{Transport Messages}\label{sec:Virtio Transport Options / Virtio Over Messages / Transport Messages}
+
+Transport messages configure and operate virtio devices once they have been
+discovered. Unlike bus messages (which cover enumeration or hotplug), transport
+messages focus on feature negotiation, configuration access, virtqueue setup,
+and runtime notifications. The subsections below describe each message and how
+it is used in the virtio-msg transport.
+
+\subsubsection{Overview}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Transport Messages / Overview}
+
+Drivers send transport messages to a specific device number, and the virtio-msg
+device replies or emits events accordingly. The bus simply forwards these
+messages after enforcing generic checks such as maximum size or verifying that
+the target device exists. Most transport messages are request/response pairs,
+with events reserved for asynchronous notifications.
+
+\paragraph{Message IDs and initiating side}
+
+In the table below, the initiating side identifies which side of the
+transport-message exchange starts the message.
+
+\begin{tabular}{|l|l|l|}
+\hline
+Name & ID & Initiating side \\
+\hline
+\hline
+Reserved                   & 0x0 & \\
+\hline
+Reserved                   & 0x1 & \\
+\hline
+\msgref{GET_DEVICE_INFO}   & 0x2  & Driver side \\
+\hline
+\msgref{GET_DEVICE_FEATURES} & 0x3  & Driver side \\
+\hline
+\msgref{SET_DRIVER_FEATURES} & 0x4  & Driver side \\
+\hline
+\msgref{GET_CONFIG}        & 0x5  & Driver side \\
+\hline
+\msgref{SET_CONFIG}        & 0x6  & Driver side \\
+\hline
+\msgref{GET_DEVICE_STATUS} & 0x7  & Driver side \\
+\hline
+\msgref{SET_DEVICE_STATUS} & 0x8  & Driver side \\
+\hline
+\msgref{GET_VQUEUE}        & 0x9  & Driver side \\
+\hline
+\msgref{SET_VQUEUE}        & 0xA  & Driver side \\
+\hline
+\msgref{RESET_VQUEUE}      & 0xB  & Driver side \\
+\hline
+\msgref{GET_SHM}           & 0xC  & Driver side \\
+\hline
+\msgref{EVENT_CONFIG}      & 0x40 & Device side \\
+\hline
+\msgref{EVENT_AVAIL}       & 0x41 & Driver side \\
+\hline
+\msgref{EVENT_USED}        & 0x42 & Device side \\
+\hline
+\end{tabular}
+
+Transport-message ID bit encoding is defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format}.
+
+\devicenormative{\paragraph}{Core Messages}{Virtio Transport Options / Virtio Over Messages / Transport Messages / Mandatory / Device}
+\begin{itemize}
+  \item A device MUST implement \msgref{GET_DEVICE_INFO},
+        \msgref{GET_DEVICE_FEATURES}, \msgref{SET_DRIVER_FEATURES},
+        \msgref{GET_CONFIG}, \msgref{SET_CONFIG}, \msgref{GET_DEVICE_STATUS},
+        \msgref{SET_DEVICE_STATUS}, \msgref{GET_VQUEUE}, \msgref{SET_VQUEUE},
+        \msgref{RESET_VQUEUE}, and \msgref{GET_SHM}.
+\end{itemize}
+
+\drivernormative{\paragraph}{Core Messages}{Virtio Transport Options / Virtio Over Messages / Transport Messages / Mandatory / Driver}
+\begin{itemize}
+  \item A driver MUST support sending and interpreting
+        \msgref{GET_DEVICE_INFO}, \msgref{GET_DEVICE_FEATURES},
+        \msgref{SET_DRIVER_FEATURES}, \msgref{GET_CONFIG},
+        \msgref{SET_CONFIG}, \msgref{GET_DEVICE_STATUS},
+        \msgref{SET_DEVICE_STATUS}, \msgref{GET_VQUEUE},
+        \msgref{SET_VQUEUE}, and \msgref{RESET_VQUEUE} in order to
+        initialize and operate a virtio-msg device.
+\end{itemize}
+
+As described in Sections
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Driver Notifications}
+and
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications},
+runtime notifications (\msgref{EVENT_AVAIL}, \msgref{EVENT_USED}, and
+\msgref{EVENT_CONFIG}) are defined as transport messages. A bus binding can
+carry these notifications as messages or use bus-specific signaling, such as
+hardware or software interrupts, from which the receiving-side bus
+implementation generates transport events locally. An event message need not
+be sent over the bus. There need not be a one-to-one correspondence between
+bus signals and transport events. Bus bindings define the signaling mechanism
+and coalescing policy for virtqueue notifications.
+
+\busnormative{\paragraph}{Runtime Notifications}{Virtio Transport Options / Virtio Over Messages / Transport Messages / Runtime Notifications / Bus}
+\begin{itemize}
+  \item A bus implementation MUST define how runtime notifications
+        (\msgref{EVENT_AVAIL}, \msgref{EVENT_USED}, and \msgref{EVENT_CONFIG})
+        are delivered to the receiving transport, including any bus-specific
+        signaling, local event synthesis, coalescing, and required
+        configuration.
+  \item A bus implementation MAY coalesce \msgref{EVENT_AVAIL} or
+        \msgref{EVENT_USED} notifications for the same virtqueue and direction,
+        provided it preserves the required virtqueue notifications and progress,
+        including any negotiated notification-data semantics.
+  \item A bus implementation MUST deliver each \msgref{EVENT_CONFIG}
+        notification as a forwarded or locally synthesized transport event.
+  \item A bus implementation MUST NOT expose both forwarded and synthesized
+        transport events for the same notification, or expose a bus signal as
+        an additional transport event when the notification has already been
+        delivered by forwarding or synthesis.
+  \item If polling-only mode is selected by the endpoints for availability
+        handling or used-buffer completion, any bus-side polling, forwarding,
+        or synthesis logic for that function MUST remain transparent and MUST
+        NOT create a transport-visible \msgref{EVENT_AVAIL} or
+        \msgref{EVENT_USED} semantic occurrence.
+  \item A bus implementation MUST use bounded timeout and polling policies for
+        runtime-notification delivery. If a required transport-visible event
+        cannot be delivered within the bounded policy, it MUST surface a
+        transport-visible failure and MUST define recovery behavior using the
+        reset and status mechanisms.
+\end{itemize}
+
+\msgdef{GET_DEVICE_INFO}
+
+The driver issues \msgref{GET_DEVICE_INFO} to discover static identification
+data and limits for a device. The response includes \field{device_uuid}, a
+16-byte UUID value. The nil UUID defined by
+\hyperref[intro:rfc4122]{[RFC4122]} indicates that no UUID is provided.
+\field{admin_vq_start} and \field{admin_vq_count} identify a contiguous range
+of administration virtqueues within \field{max_virtqueues}. If
+\field{admin_vq_count} is 0, the device exposes no administration virtqueues
+and \field{admin_vq_start} is 0.
+\msgref{GET_DEVICE_INFO} is the only transport message that may be issued as an
+early-discovery exception before the normal initialization sequence begins.
+After \msgref{GET_DEVICE_INFO}, drivers follow the standard virtio
+initialization sequence and use other transport messages only within that flow.
+
+\begin{lstlisting}
+struct virtio_msg_get_device_info_req {
+        /* no payload */
+};
+
+struct virtio_msg_get_device_info_resp {
+        le32 device_id;        /* virtio device type */
+        le32 vendor_id;        /* implementation-defined vendor ID */
+        u8   device_uuid[16];  /* UUID, or nil UUID if unavailable */
+        le32 num_feature_blocks; /* total number of 32-bit feature blocks */
+        le32 config_size;      /* bytes in the device configuration space */
+        le32 max_virtqueues;   /* maximum virtqueues supported */
+        le32 admin_vq_start;   /* index of the first admin virtqueue */
+        le32 admin_vq_count;   /* number of admin virtqueues */
+};
+\end{lstlisting}
+
+\devicenormative{\paragraph}{GET\_DEVICE\_INFO}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_INFO / Device}
+\begin{itemize}
+  \item A device MUST respond to \msgref{GET_DEVICE_INFO} while inactive and
+        MUST supply consistent values for device ID, vendor ID, feature-block
+        count, configuration size, and virtqueue limits.
+  \item A device MUST report \field{num_feature_blocks} large enough to cover
+        every feature bit the device offers.
+  \item A device MUST report \field{max_virtqueues} no greater than 65536.
+  \item \field{max_virtqueues} MUST include any administration virtqueues
+        described by \field{admin_vq_start} and \field{admin_vq_count}.
+  \item If \field{admin_vq_count} is 0, a device MUST set
+        \field{admin_vq_start} to 0.
+  \item If \field{admin_vq_count} is greater than 0, a device MUST ensure
+        \field{admin_vq_start} + \field{admin_vq_count} does not exceed
+        \field{max_virtqueues}.
+  \item A device MAY set \field{device_uuid} to a UUID value that can be used
+        as a unique identifier.
+  \item If a device sets \field{device_uuid} to a non-nil value, it SHOULD use
+        a version 4 UUID as specified by
+        \hyperref[intro:rfc4122]{[RFC4122]}.
+  \item If a device does not support UUID reporting or does not have an
+        identifier, it MUST set \field{device_uuid} to the nil UUID.
+\end{itemize}
+
+\drivernormative{\paragraph}{GET\_DEVICE\_INFO}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_INFO / Driver}
+\begin{itemize}
+  \item A driver SHOULD treat the response as the authoritative source for
+        feature-block count, configuration size, and virtqueue limits before
+        proceeding with initialization.
+  \item A driver MUST interpret \field{admin_vq_count}=0 as indicating that the
+        device exposes no administration virtqueues.
+  \item If \field{admin_vq_count} is greater than 0, a driver MUST treat the
+        range starting at \field{admin_vq_start} and spanning
+        \field{admin_vq_count} entries as part of \field{max_virtqueues}.
+  \item A driver MUST interpret a nil UUID in \field{device_uuid} as indicating
+        that no UUID is provided.
+\end{itemize}
+
+\msgdef{GET_DEVICE_FEATURES}
+
+Drivers retrieve device feature bits in 32-bit blocks via
+\msgref{GET_DEVICE_FEATURES}; the response echoes the requested block index and
+returns one or more 32-bit values with the device-offered feature bits in that
+range.
+
+\begin{lstlisting}
+struct virtio_msg_get_device_features_req {
+        le32 block_index; /* starting block (0 == bits 0-31) */
+        le32 num_blocks;  /* number of 32-bit blocks requested */
+};
+
+struct virtio_msg_get_device_features_resp {
+        le32 block_index; /* echoed starting block */
+        le32 num_blocks;  /* echoed number of blocks */
+        le32 features[];  /* num_blocks entries, zero-padded if needed */
+};
+\end{lstlisting}
+
+Zero-padding for out-of-range blocks is defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks}.
+
+\drivernormative{\paragraph}{GET\_DEVICE\_FEATURES}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_FEATURES / Driver}
+\begin{itemize}
+  \item A driver MUST treat the returned data as 32-bit feature blocks starting
+        at the requested index, padding with zeros as needed, before deciding
+        which features to enable.
+\end{itemize}
+
+\devicenormative{\paragraph}{GET\_DEVICE\_FEATURES}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_FEATURES / Device}
+\begin{itemize}
+  \item A device MUST echo the requested \field{block_index} and
+        \field{num_blocks} in its response.
+\end{itemize}
+
+\msgdef{SET_DRIVER_FEATURES}
+
+Drivers use \msgref{SET_DRIVER_FEATURES} to convey the subset of feature
+bits they wish to enable. The payload mirrors \msgref{GET_DEVICE_FEATURES},
+supplying an index, count, and 32-bit feature data for the selected blocks.
+Each \msgref{SET_DRIVER_FEATURES} request updates only the addressed blocks;
+blocks outside the addressed range are unchanged. Drivers MAY send multiple
+\msgref{SET_DRIVER_FEATURES} requests at different block offsets before setting
+FEATURES\_OK. The response has no payload.
+
+\begin{lstlisting}
+struct virtio_msg_set_driver_features_req {
+        le32 block_index; /* starting block being selected */
+        le32 num_blocks;  /* number of blocks provided */
+        le32 features[];  /* num_blocks entries with desired bits */
+};
+
+struct virtio_msg_set_driver_features_resp {
+        /* no payload */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{SET\_DRIVER\_FEATURES}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DRIVER_FEATURES / Driver}
+\begin{itemize}
+  \item A driver MUST set only the feature bits it intends to enable in the
+        blocks supplied to \msgref{SET_DRIVER_FEATURES}.
+  \item A driver MAY use multiple \msgref{SET_DRIVER_FEATURES} requests with
+        different \field{block_index} values to build the final driver-selected
+        feature set before setting FEATURES\_OK.
+\end{itemize}
+
+Block-scoped update semantics for \msgref{SET_DRIVER_FEATURES} are defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks}.
+
+\msgdef{GET_CONFIG}
+
+\msgref{GET_CONFIG} reads a portion of the configuration space. The request
+specifies the byte \field{offset} and \field{length}; the response echoes those
+values, returns the data, and includes the current generation count. Generation
+semantics follow the active configuration profile defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}.
+
+\begin{lstlisting}
+struct virtio_msg_get_config_req {
+        le32 offset; /* byte offset into configuration space */
+        le32 length; /* number of bytes requested */
+};
+
+struct virtio_msg_get_config_resp {
+        le32 generation; /* current generation count */
+        le32 offset;     /* echoed offset */
+        le32 length;     /* echoed length */
+        u8   data[];     /* configuration payload */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{GET\_CONFIG}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_CONFIG / Driver}
+\begin{itemize}
+  \item A driver MUST ensure the requested \field{offset} and \field{length}
+        in \msgref{GET_CONFIG} stay within the configuration size reported by
+        \msgref{GET_DEVICE_INFO}.
+\end{itemize}
+
+\devicenormative{\paragraph}{GET\_CONFIG}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_CONFIG / Device}
+\begin{itemize}
+  \item A device MUST echo the requested \field{offset} and \field{length}
+        in its response.
+  \item A device MUST include its current generation count in the
+        \field{generation} field of every \msgref{GET_CONFIG} response.
+\end{itemize}
+
+\msgdef{SET_CONFIG}
+
+\msgref{SET_CONFIG} writes a portion of configuration space, supplying the
+\field{offset}, \field{length}, the driver's view of the generation count, and
+the new data. The device echoes the \field{offset}, returns the
+resulting generation count, and reports in response \field{length} whether the
+requested nonzero write was applied in full. A request with \field{length}=0 is
+a valid no-op. For a request with \field{length}>0, the device either applies
+all requested bytes and returns response \field{length} equal to the request
+\field{length}, or applies nothing and returns response \field{length}=0 with no
+payload bytes.
+Generation-mismatch rejection is defined only for strict profile.
+Generation semantics follow the active configuration profile defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}.
+
+\begin{lstlisting}
+struct virtio_msg_set_config_req {
+        le32 generation; /* driver's view; used for mismatch rejection only in
+                          * strict profile (MUST be 0 otherwise) */
+        le32 offset;     /* byte offset being written */
+        le32 length;     /* number of bytes requested; 0 is a valid no-op */
+        u8   data[];     /* configuration payload */
+};
+
+struct virtio_msg_set_config_resp {
+        le32 generation; /* resulting generation count */
+        le32 offset;     /* echoed offset */
+        le32 length;     /* request length if fully applied; 0 if not applied */
+        u8   data[];     /* echoed data for a fully applied nonzero write; omitted if length is 0 */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{SET\_CONFIG}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_CONFIG / Driver}
+\begin{itemize}
+  \item A driver MUST keep the \field{offset} and \field{length} within the
+        reported configuration size in each \msgref{SET_CONFIG} request.
+  \item A driver MAY issue \msgref{SET_CONFIG} with \field{length}=0 as a
+        no-op.
+  \item If a driver issues \msgref{SET_CONFIG} with request \field{length}>0,
+        it MUST treat response \field{length} equal to the request
+        \field{length} as fully applied and response \field{length}=0 as not
+        applied; partial nonzero lengths are not valid success indications.
+\end{itemize}
+
+\devicenormative{\paragraph}{SET\_CONFIG}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_CONFIG / Device}
+\begin{itemize}
+  \item A device MUST echo the requested \field{offset} in its response.
+  \item If a device sets response \field{length} to a nonzero value, it MUST
+        echo the request \field{data} in its response.
+  \item A device MUST set response \field{generation} to its current generation
+        count in every \msgref{SET_CONFIG} response.
+  \item If a device accepts \msgref{SET_CONFIG} with request \field{length}=0,
+        it MUST treat the request as a no-op.
+  \item For \msgref{SET_CONFIG} requests with request \field{length}>0, a
+        device MUST either apply all requested bytes and set response
+        \field{length} to the request \field{length}, or apply no bytes and set
+        response \field{length} to 0; partial nonzero application is not
+        allowed.
+  \item If a device sets response \field{length} to 0, it MUST NOT include
+        response \field{data} bytes.
+\end{itemize}
+
+\msgdef{GET_DEVICE_STATUS}
+
+\msgref{GET_DEVICE_STATUS} reads the current device status (e.g., ACKNOWLEDGE,
+DRIVER, DRIVER\_OK, FEATURES\_OK, or DEVICE\_NEEDS\_RESET bits). The request has
+no payload; the response returns the 32-bit status value.
+
+\begin{lstlisting}
+struct virtio_msg_get_device_status_req {
+        /* no payload */
+};
+
+struct virtio_msg_get_device_status_resp {
+        le32 status; /* current device status bits */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{GET\_DEVICE\_STATUS}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_STATUS / Driver}
+\begin{itemize}
+  \item A driver MAY send \msgref{GET_DEVICE_STATUS} whenever it needs the
+        current device status bits.
+  \item If device status reports DEVICE\_NEEDS\_RESET, a driver SHOULD write 0
+        via \msgref{SET_DEVICE_STATUS} and reinitialize the device before
+        resuming I/O.
+  \item When waiting for reset completion after writing status 0 via
+        \msgref{SET_DEVICE_STATUS} and synchronous completion is not indicated,
+        a driver MUST poll \msgref{GET_DEVICE_STATUS} until
+        \field{status}=0 before continuing initialization.
+\end{itemize}
+
+\devicenormative{\paragraph}{GET\_DEVICE\_STATUS}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_STATUS / Device}
+\begin{itemize}
+  \item A device MUST report its current status accurately via
+        \msgref{GET_DEVICE_STATUS}, including whether FEATURES\_OK or
+        DEVICE\_NEEDS\_RESET are set.
+  \item If a device encounters an unrecoverable error that requires driver
+        intervention, it SHOULD set DEVICE\_NEEDS\_RESET in the status it
+        reports to the driver.
+\end{itemize}
+
+\msgdef{SET_DEVICE_STATUS}
+
+\msgref{SET_DEVICE_STATUS} writes a new device status value. Drivers use it to
+progress through the virtio-defined states or to request a reset by writing 0.
+The response reports the \field{status} value observed when the response is
+generated. For a reset request (\field{status} == 0), a response
+\field{status} of 0 indicates reset completion; a non-zero \field{status}
+indicates that reset completion may still be pending. The resulting
+\field{status} may differ from the requested \field{status} (for example, if
+the device refuses FEATURES\_OK or sets DEVICE\_NEEDS\_RESET). After reset
+completion, core virtio post-reset requirements continue to apply.
+
+\begin{lstlisting}
+struct virtio_msg_set_device_status_req {
+        le32 status; /* desired device status value */
+};
+
+struct virtio_msg_set_device_status_resp {
+        le32 status; /* resulting device status */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{SET\_DEVICE\_STATUS}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DEVICE_STATUS / Driver}
+\begin{itemize}
+  \item A driver MUST write 0 via \msgref{SET_DEVICE_STATUS} to request a device
+        reset.
+  \item A driver that needs to confirm reset completion MUST treat a
+        \msgref{SET_DEVICE_STATUS} response \field{status} of 0 as completion;
+        otherwise it MUST poll \msgref{GET_DEVICE_STATUS} until the device
+        reports \field{status}=0 before reinitializing the device.
+\end{itemize}
+
+\devicenormative{\paragraph}{SET\_DEVICE\_STATUS}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DEVICE_STATUS / Device}
+\begin{itemize}
+  \item A device MAY clear FEATURES\_OK or set DEVICE\_NEEDS\_RESET in its
+        response if it cannot accept the requested \field{status}, but it MUST
+        report the resulting \field{status} accurately.
+  \item Upon receiving \msgref{SET_DEVICE_STATUS} with \field{status} set to 0,
+        a device MUST start reset processing and MUST eventually complete reset
+        by reporting \field{status}=0.
+  \item A device MAY complete reset before sending the
+        \msgref{SET_DEVICE_STATUS} response (synchronous completion) or after
+        sending it (asynchronous completion).
+  \item A device MUST NOT report \field{status}=0 until reset completion.
+\end{itemize}
+
+\msgdef{GET_VQUEUE}
+
+\msgref{GET_VQUEUE} returns information about a specific virtqueue, including
+its maximum size, current size, enabled state, and, if already configured, the
+descriptor, driver, and device area addresses, as defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses}.
+For unavailable,
+unimplemented, or out-of-range queue indexes, the response uses a
+deterministic zero sentinel while still echoing the requested \field{index}.
+
+\begin{lstlisting}
+struct virtio_msg_get_vqueue_req {
+        le32 index; /* virtqueue index */
+};
+
+struct virtio_msg_get_vqueue_resp {
+        le32 index;        /* echoed virtqueue index */
+        le32 max_size;     /* maximum queue size (0 if unavailable) */
+        le32 cur_size;     /* current size (0 if unconfigured/unavailable) */
+        le32 flags;        /* bit0: enabled state, 0 if unavailable */
+        le64 desc_addr;    /* descriptor area address (0 if unavailable) */
+        le64 driver_addr;  /* driver area address (0 if unavailable) */
+        le64 device_addr;  /* device area address (0 if unavailable) */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{GET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_VQUEUE / Driver}
+\begin{itemize}
+  \item Before configuring a virtqueue, a driver MUST query that queue with
+        \msgref{GET_VQUEUE} and MUST treat \field{max_size}=0 as unavailable,
+        unimplemented, or out of range.
+  \item When issuing \msgref{SET_VQUEUE} for a queue with nonzero
+        \field{max_size}, a driver MUST NOT request a queue size greater than
+        the \field{max_size} reported by \msgref{GET_VQUEUE}.
+\end{itemize}
+
+\devicenormative{\paragraph}{GET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_VQUEUE / Device}
+\begin{itemize}
+  \item A device MUST echo the requested \field{index} in its response.
+  \item For an available and implemented virtqueue index, a device MUST report
+        accurate maxima and current queue sizes and MUST return zero as the
+        current size if the queue has not yet been configured.
+  \item For an unavailable, unimplemented, or out-of-range virtqueue index
+        (\field{index} >= \field{max_virtqueues} from \msgref{GET_DEVICE_INFO}),
+        a device MUST return the deterministic unavailable-queue sentinel:
+        \field{max_size}=0, \field{cur_size}=0, \field{flags}=0,
+        \field{desc_addr}=0, \field{driver_addr}=0, and \field{device_addr}=0,
+        while echoing the requested \field{index}.
+  \item A device MUST report queue enabled state in \field{flags} bit 0 and
+        MUST set \field{flags} bits 31:1 to zero.
+\end{itemize}
+
+\msgdef{SET_VQUEUE}
+
+\msgref{SET_VQUEUE} updates a virtqueue's parameters and queue state. Address
+fields follow
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses}.
+The driver selects a queue index and uses \field{flags} to indicate whether queue
+state should be enabled, kept disabled, or kept unchanged, and which queue
+fields should be ignored versus updated.
+
+\begin{lstlisting}
+struct virtio_msg_set_vqueue_req {
+        le32 index;       /* virtqueue index */
+        le32 flags;       /* state op + ignore bits */
+        le32 size;        /* number of descriptors */
+        le32 reserved;    /* must be zero */
+        le64 desc_addr;   /* descriptor area address */
+        le64 driver_addr; /* driver area address */
+        le64 device_addr; /* device area address */
+};
+
+struct virtio_msg_set_vqueue_resp {
+        /* no payload */
+};
+\end{lstlisting}
+
+\field{flags} is defined as:
+\begin{itemize}
+  \item Bits [1:0] (\textbf{State Operation}):
+    \begin{itemize}
+      \item 0: keep queue disabled.
+      \item 1: enable queue.
+      \item 2: keep current queue state.
+      \item 3: reserved.
+    \end{itemize}
+  \item Bit 2 (\textbf{size\_ignore}): 0=apply \field{size}, 1=ignore.
+  \item Bit 3 (\textbf{desc\_addr\_ignore}): 0=apply \field{desc_addr},
+        1=ignore.
+  \item Bit 4 (\textbf{driver\_addr\_ignore}): 0=apply \field{driver_addr},
+        1=ignore.
+  \item Bit 5 (\textbf{device\_addr\_ignore}): 0=apply \field{device_addr},
+        1=ignore.
+  \item Bits [31:6]: reserved, MUST be zero.
+\end{itemize}
+
+When \field{flags} is zero, \msgref{SET_VQUEUE} uses current behavior:
+if the queue is disabled, all queue fields in the request are applied and the
+queue remains disabled.
+
+\drivernormative{\paragraph}{SET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_VQUEUE / Driver}
+\begin{itemize}
+  \item A driver MUST set \field{reserved} to zero and MUST set \field{flags}
+        bits [31:6] to zero.
+  \item A driver MUST NOT use state operation value 3 in \field{flags} bits
+        [1:0].
+  \item A driver SHOULD use \msgref{GET_VQUEUE} to determine whether a queue is
+        available before relying on \msgref{SET_VQUEUE} to modify it.
+  \item A driver MUST NOT use state operation value 0 as a request to disable an
+        already enabled queue.
+  \item If \field{size\_ignore} is 0, a driver MUST set \field{size} to a value
+        not exceeding the maximum reported by \msgref{GET_VQUEUE}.
+  \item If any address ignore bit is 0, a driver MUST ensure the corresponding
+        address identifies memory with the alignment required by the virtqueue
+        format.
+  \item A driver MUST NOT attempt to update queue size or queue addresses via
+        \msgref{SET_VQUEUE} while the queue is enabled.
+  \item If a driver needs to reconfigure an enabled queue, it MUST issue
+        \msgref{RESET_VQUEUE} first when VIRTIO\_F\_RING\_RESET is negotiated.
+  \item Because \msgref{SET_VQUEUE} has no response payload, a driver that
+        needs confirmation of acceptance MUST verify the resulting queue
+        parameters and state via \msgref{GET_VQUEUE} before relying on the
+        requested updates.
+\end{itemize}
+
+\devicenormative{\paragraph}{SET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_VQUEUE / Device}
+\begin{itemize}
+  \item For an unavailable, unimplemented, or out-of-range virtqueue index
+        (\field{index} >= \field{max_virtqueues} from \msgref{GET_DEVICE_INFO}),
+        a device MUST treat \msgref{SET_VQUEUE} as a no-op and MUST NOT modify
+        any queue state or parameters.
+  \item If \field{reserved} is nonzero, if \field{flags} bits [31:6] are
+        nonzero, or if \field{flags} bits [1:0] use state operation value 3, a
+        device MUST do nothing (no queue state or parameter change) and MUST
+        return the normal empty \msgref{SET_VQUEUE} response.
+  \item If \field{flags} requests state operation value 0 for a queue that is
+        currently enabled, a device MUST do nothing (no queue state or
+        parameter change) and MUST return the normal empty
+        \msgref{SET_VQUEUE} response.
+  \item A device MUST process \msgref{SET_VQUEUE} updates atomically: it MUST
+        either apply all requested field updates and queue-state changes, or
+        do nothing (no queue state or parameter change) and return the normal
+        empty \msgref{SET_VQUEUE} response.
+  \item If an ignore bit is 0, a device MUST apply the corresponding field from
+        \msgref{SET_VQUEUE}; if an ignore bit is 1, a device MUST keep the
+        current value for that field unchanged.
+  \item For a queue that is enabled, if \msgref{SET_VQUEUE} attempts to update
+        \field{size}, \field{desc_addr}, \field{driver_addr}, or
+        \field{device_addr}, a device MUST do nothing (no queue state or
+        parameter change) and MUST return the normal empty
+        \msgref{SET_VQUEUE} response.
+  \item A device MUST apply queue state according to \field{flags} bits [1:0]
+        after processing requested field updates, and MUST NOT perform an
+        enabled-to-disabled transition via \msgref{SET_VQUEUE}.
+\end{itemize}
+
+\msgdef{RESET_VQUEUE}
+
+\msgref{RESET_VQUEUE} resets an individual virtqueue (if VIRTIO\_F\_RING\_RESET
+has been negotiated). It requires only the queue index; the device responds
+after the queue has been quiesced. After reset completion, the core virtio
+post-reset requirements for that queue continue to apply.
+
+\begin{lstlisting}
+struct virtio_msg_reset_vqueue_req {
+        le32 index; /* virtqueue index */
+};
+
+struct virtio_msg_reset_vqueue_resp {
+        /* no payload */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{RESET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_RESET_VQUEUE / Driver}
+\begin{itemize}
+  \item A driver MUST issue \msgref{RESET_VQUEUE} only if
+        VIRTIO\_F\_RING\_RESET has been negotiated and it needs to reconfigure
+        or recover a specific queue.
+  \item A driver SHOULD use \msgref{GET_VQUEUE} to determine whether a queue is
+        available before relying on \msgref{RESET_VQUEUE} to affect it.
+  \item If an enabled queue requires reconfiguration and
+        VIRTIO\_F\_RING\_RESET is negotiated, a driver MUST wait for
+        \msgref{RESET_VQUEUE} completion before issuing \msgref{SET_VQUEUE}
+        updates for that queue.
+\end{itemize}
+
+\devicenormative{\paragraph}{RESET\_VQUEUE}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_RESET_VQUEUE / Device}
+\begin{itemize}
+  \item For an unavailable, unimplemented, or out-of-range virtqueue index
+        (\field{index} >= \field{max_virtqueues} from \msgref{GET_DEVICE_INFO}),
+        a device MUST treat \msgref{RESET_VQUEUE} as a no-op and MUST NOT
+        modify any queue state.
+  \item If VIRTIO\_F\_RING\_RESET has not been negotiated, a device MUST do
+        nothing (no queue state change) and MUST return the normal empty
+        \msgref{RESET_VQUEUE} response.
+  \item Upon receiving \msgref{RESET_VQUEUE}, a device MUST stop processing the
+        indicated queue, reset its internal state for that queue, and allow the
+        driver to reconfigure it via \msgref{SET_VQUEUE} while the queue is
+        disabled.
+\end{itemize}
+
+\msgdef{GET_SHM}
+
+\msgref{GET_SHM} returns the location and size of a device-owned shared memory
+region. The request carries the shared-memory region identifier
+\field{shmid}; the response echoes \field{shmid} and provides the base
+\field{address} and \field{length}. The address follows
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses}.
+A \field{length} of zero
+indicates that the specified \field{shmid} is not supported by the device.
+
+\begin{lstlisting}
+struct virtio_msg_get_shm_req {
+        le32 shmid; /* shared memory region identifier */
+};
+
+struct virtio_msg_get_shm_resp {
+        le32 shmid;     /* echoed region identifier */
+        le32 reserved;  /* must be zero */
+        le64 length;    /* region length (0 if nonexistent) */
+        le64 address;   /* region address */
+};
+\end{lstlisting}
+
+\devicenormative{\paragraph}{GET\_SHM}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_SHM / Device}
+\begin{itemize}
+  \item A device MUST echo the requested \field{shmid} in its response,
+        including when the requested region is not supported.
+  \item A device MUST return zero \field{length} if the requested
+        \field{shmid} is not supported and MUST report accurate
+        \field{address}/\field{length} information for regions it supports.
+  \item A device MUST set the \field{reserved} field in \msgref{GET_SHM}
+        responses to zero.
+\end{itemize}
+
+\msgdef{EVENT_CONFIG}
+
+\msgref{EVENT_CONFIG} notifies the driver about configuration changes or
+device-originated asynchronous status changes that require asynchronous
+reporting. The payload includes current device status, generation, and
+configuration \field{offset}/\field{length}. The configuration data can be
+omitted; if omitted, the driver re-fetches via \msgref{GET_CONFIG}. Generation
+and \field{offset}/\field{length} semantics are defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}.
+Ordinary driver-originated status writes via \msgref{SET_DEVICE_STATUS} are
+already observed synchronously and do not by themselves trigger
+\msgref{EVENT_CONFIG}; an event may be sent later only when a distinct
+device-originated asynchronous status change occurs afterward.
+If the event reports only a status change with no configuration update, the
+device sets \field{offset} and \field{length} to zero.
+
+\begin{lstlisting}
+struct virtio_msg_event_config {
+        le32 device_status; /* new device status value */
+        le32 generation;    /* current generation count */
+        le32 offset;        /* configuration offset */
+        le32 length;        /* number of bytes in affected range */
+        u8   data[];        /* optional configuration data */
+};
+\end{lstlisting}
+
+The conditions that require \msgref{EVENT_CONFIG}, and its generation and
+\field{offset}/\field{length} semantics, are defined by
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles}
+and
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications}.
+
+\msgdef{EVENT_AVAIL}
+
+\msgref{EVENT_AVAIL} notifies the device that a virtqueue has new buffers. The
+message includes the virtqueue index in \field{vq_index} and, if
+VIRTIO\_F\_NOTIFICATION\_DATA is negotiated, a combined next-offset/next-wrap
+field in \field{next_offset} so the device can jump directly to the updated
+position. If VIRTIO\_F\_NOTIFICATION\_DATA is not negotiated, \field{next_offset}
+is reserved and is set to zero. This transport does not support
+VIRTIO\_F\_NOTIF\_CONFIG\_DATA; \field{vq_index} always identifies the target
+virtqueue by index. When VIRTIO\_F\_NOTIFICATION\_DATA is negotiated,
+\field{next_offset} encodes core virtio notification data:
+\field{next_offset}[30:0] carries core \field{next_off}, and
+\field{next_offset}[31] carries core \field{next_wrap}. For split virtqueues,
+\field{next_off} is derived from split-ring available-index progression and
+\field{next_wrap} is zero. For packed virtqueues, \field{next_off} and
+\field{next_wrap} are derived from packed-ring notification-data values as
+defined by core virtio.
+
+\begin{lstlisting}
+struct virtio_msg_event_avail {
+        le32 vq_index;    /* virtqueue index */
+        le32 next_offset; /* bits[30:0] offset, bit[31] wrap; reserved if unused */
+};
+\end{lstlisting}
+
+\drivernormative{\paragraph}{EVENT\_AVAIL}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_AVAIL / Driver}
+\begin{itemize}
+  \item A driver MUST identify the target virtqueue in \field{vq_index}.
+  \item If VIRTIO\_F\_NOTIFICATION\_DATA has not been negotiated, a driver MUST
+        set \field{next_offset} to zero in \msgref{EVENT_AVAIL} messages. If it
+        has been negotiated, the driver MUST encode core \field{next_off} in
+        \field{next_offset}[30:0] and core \field{next_wrap} in
+        \field{next_offset}[31], using split-queue or packed-queue derivation
+        as defined by core virtio.
+\end{itemize}
+
+\busnormative{\paragraph}{EVENT\_AVAIL}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_AVAIL / Bus}
+\begin{itemize}
+  \item If a bus implementation cannot preserve
+        VIRTIO\_F\_NOTIFICATION\_DATA semantics for \msgref{EVENT_AVAIL}, it
+        MUST prevent negotiation of VIRTIO\_F\_NOTIFICATION\_DATA.
+\end{itemize}
+
+\msgdef{EVENT_USED}
+
+\msgref{EVENT_USED} notifies the driver that buffers on a particular virtqueue
+have been consumed. The payload carries only the queue index; the driver uses
+its used ring to determine which descriptors completed. If polling-only mode is
+selected by the endpoints, \msgref{EVENT_USED} is not a semantic requirement
+for completion observation. Polling-only selection and the requirement to
+originate \msgref{EVENT_USED} when event-driven completion is used are defined
+in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications}.
+
+\begin{lstlisting}
+struct virtio_msg_event_used {
+        le32 vq_index; /* virtqueue index */
+};
+\end{lstlisting}
+
+\devicenormative{\paragraph}{EVENT\_USED}{Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_USED / Device}
+\begin{itemize}
+  \item A device MUST identify the virtqueue whose buffers have been consumed
+        in \field{vq_index}.
+\end{itemize}
+
+
+\subsection{Bus Messages}\label{sec:Virtio Transport Options / Virtio Over Messages / Bus Messages}
+
+The standard bus messages defined here provide optional mechanisms for device
+discovery, hotplug notifications, and bus-level liveness checks. A bus binding
+may use any subset of these messages, including none, and may define alternative
+mechanisms for these functions. Support for a standard bus message does not
+require support for dynamic device addition or removal.
+
+\subsubsection{Overview}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Bus Messages / Overview}
+
+Each bus implementation chooses which of these messages to support. Some may
+implement all of them for a fully message-based workflow, while others may rely
+on out-of-band enumeration and use only the subset that fits their needs.
+
+\paragraph{Message IDs and initiating side}
+
+In the table below, the initiating side identifies which side of the bus
+message exchange starts the message, not the local software component that
+serializes it on a particular implementation.
+
+\begin{tabular}{|l|l|l|}
+\hline
+Name & ID & Initiating side \\
+\hline
+\hline
+Reserved                    & 0x0  &        \\
+\hline
+Reserved                    & 0x1  &        \\
+\hline
+\busref{GET_DEVICES}        & 0x2  & Driver side \\
+\hline
+\busref{PING}               & 0x3  & Either side \\
+\hline
+\busref{EVENT_DEVICE}       & 0x40 & Device side \\
+\hline
+\end{tabular}
+
+Bus-message ID bit encoding is defined in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format}.
+
+\paragraph{Bus Specific Messages}
+\label{sec:Virtio Transport Options / Virtio Over Messages / Bus Messages / Bus Specific Messages}
+
+A range of message IDs are reserved for use by the specific bus
+implementation. These messages can be used for any implementation-specific
+usage. Example usage could include:
+
+\begin{itemize}
+  \item Configuration of out-of-band notification methods
+  \item Setup shared memory regions to be used for buffers or virtqueues
+  \item Declare bus-specific error conditions
+  \item Provide extra debug or logging information
+\end{itemize}
+
+\busdef{GET_DEVICES}
+
+A bus implementation uses this request to enumerate device numbers exposed by a
+peer bus instance. The response describes a window of device numbers and
+signals which entries are present.
+
+\begin{lstlisting}
+struct virtio_bus_msg_get_devices_req {
+        le16 offset; /* starting device number */
+        le16 count;  /* number of device-number slots requested */
+};
+
+struct virtio_bus_msg_get_devices_resp {
+        le16 offset;      /* echoed starting device number */
+        le16 next_offset; /* 0 or suggested start for next query */
+        le16 count;       /* number of slots returned */
+        u8   bitmap[];    /* ((count + 7) / 8) bytes, LSB-first packing */
+};
+\end{lstlisting}
+
+The (\field{offset}, \field{count}) tuple defines a window of \field{count}
+consecutive device numbers beginning at \field{offset}. A request with
+\field{count}=0 is valid and requests an empty window. The number of present
+devices equals the number of set bits in the first \field{count} positions of
+\field{bitmap}. The \field{bitmap} size in bytes is
+\textbf{(\field{count} + 7) / 8}. The response \field{count} MUST NOT exceed
+the request \field{count}. Responders SHOULD return the requested
+\field{count} unless constrained
+(e.g., by maximum message size) or when trailing parts of the requested window
+contain no present device numbers; in those cases they MAY return a smaller
+value, and the \field{bitmap} covers the reduced window. A response with
+\field{count}=0 returns an empty \field{bitmap}; this is valid for a request
+with \field{count}=0 and also when no devices are present in the returned
+window.
+
+Example: a request with \field{offset}=0, \field{count}=16 might produce
+\field{bitmap}=0b00100101 00000000 and \field{next_offset}=16. That indicates
+devices 0, 2, and 5 are present within the 0-15 window and suggests continuing
+at device number 16.
+
+Drivers can use this message to enumerate device numbers. Each window can be
+treated as a snapshot, advanced using \field{next_offset}, and validated with
+\msgref{GET_DEVICE_INFO} before other transport messages are issued. A response
+with \field{next_offset}=0 is terminal. Otherwise, \field{next_offset}
+recommends a later starting device number and advances enumeration beyond the
+request \field{offset}.
+
+\busnormative{\paragraph}{GET\_DEVICES}{Virtio Transport Options / Virtio Over Messages / Bus Messages / GET_DEVICES / Bus}
+\begin{itemize}
+  \item The responding bus implementation MUST echo the requested
+        \field{offset} in its response.
+  \item The responding bus implementation MUST interpret \field{count} as a
+        number of device-number slots and MUST return a \field{bitmap} of
+        \textbf{(\field{count} + 7) / 8} bytes, packed least-significant-bit
+        first.
+  \item A request with \field{count}=0 is valid. In response to such a request,
+        the responding bus implementation MUST return \field{count}=0 and an
+        empty \field{bitmap}.
+  \item The responding bus implementation MUST NOT return a \field{count} value
+        greater than the \field{count} value from the request.
+  \item If \field{count} is not a multiple of 8, the responder MUST set unused
+        bits in the last \field{bitmap} byte (positions at or above
+        \field{count}) to zero.
+  \item For a terminal response, the responding bus implementation MUST set
+        \field{next\_offset} to 0.
+  \item For a nonterminal response, the responding bus implementation MUST set
+        \field{next\_offset} to a value strictly greater than the request
+        \field{offset}.
+  \item Responders SHOULD return the requested \field{count} unless constrained
+        (e.g., by maximum message size) or when trailing parts of the requested
+        window contain no present device numbers; if a smaller \field{count} is
+        returned, the \field{bitmap} MUST still represent the window defined by
+        the echoed \field{offset} and \field{count}.
+  \item If no devices are present in the requested window, a responder MAY
+        return \field{count}=0 with an empty \field{bitmap}.
+\end{itemize}
+
+\busdef{PING}
+
+\busref{PING} checks whether the peer bus endpoint responds. It can be sent by
+either side of the bus; the response echoes the 32-bit data value from the
+request. This check can help detect failures when independently running systems
+communicate and one stops without notifying its peer, including during periods
+without other message traffic.
+
+\begin{lstlisting}
+struct virtio_bus_msg_ping_req {
+        le32 data; /* arbitrary value chosen by the sender */
+};
+
+struct virtio_bus_msg_ping_resp {
+        le32 data; /* echoed request data */
+};
+\end{lstlisting}
+
+Support for \busref{PING} is optional. Its use, sending interval, timeout, and
+recovery policy are determined by the bus binding and deployment, normally
+within the bus implementation. A successful response establishes peer bus
+endpoint responsiveness; it does not establish the health or presence of
+individual devices.
+
+\busnormative{\paragraph}{PING}{Virtio Transport Options / Virtio Over Messages / Bus Messages / PING / Bus}
+\begin{itemize}
+  \item The responding bus implementation MUST echo the 32-bit data field from
+        the request exactly in the \busref{PING} response.
+\end{itemize}
+
+\busdef{EVENT_DEVICE}
+
+\busref{EVENT_DEVICE} signals device-level hotplug changes or changes requiring
+bus-specific handling as a bus-originated control-plane event. The bus instance
+on the driver side receives these indications from the peer bus instance; the
+table below lists the defined device bus states.
+
+\begin{lstlisting}
+struct virtio_bus_msg_event_device {
+        le16 device_number;
+        le16 device_bus_state; /* see table below */
+};
+\end{lstlisting}
+
+\begin{tabular}{|l|l|p{7cm}|}
+\hline
+Constant & Value & Meaning \\
+\hline
+DEVICE\_BUS\_STATE\_NO\_DATA  & 0x0000 & Change requiring bus-specific handling. \\
+DEVICE\_BUS\_STATE\_ADDED    & 0x0001 & Device is present and ready. \\
+DEVICE\_BUS\_STATE\_REMOVED  & 0x0002 & Device is no longer present. \\
+Reserved                    & 0x0003-0x7FFF & Reserved for standard use. \\
+Implementation-defined      & 0x8000-0xFFFF & MAY be used by the bus implementation. \\
+\hline
+\end{tabular}
+
+DEVICE\_BUS\_STATE\_NO\_DATA indicates that a change has occurred without
+specifying its nature or identifying individual devices. The bus binding
+defines the required handling. For example, a bus binding may require the
+driver-side bus to reset the bus connection, remove all devices from its local
+view, and re-enumerate the device set. The \field{device\_number} field is zero
+and does not identify a device in this case; the event retains the same payload
+structure. The removal-safety and device-number assignment requirements
+continue to apply.
+
+Upon receiving DEVICE\_BUS\_STATE\_ADDED, drivers typically probe the device
+with \msgref{GET_DEVICE_INFO} before continuing initialization.
+DEVICE\_BUS\_STATE\_REMOVED reports that the device is no longer accessible
+for transport-message processing. Removal handling follows
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Device Operation / Hotplug and Removal}.
+Transport requests that cannot be routed after removal are subject to
+\ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport / Transport Message Forwarding}.
+One-way events have no request completion outcome and follow the event delivery
+rules in
+\ref{sec:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling}.
+
+\busnormative{\paragraph}{EVENT\_DEVICE}{Virtio Transport Options / Virtio Over Messages / Bus Messages / EVENT_DEVICE / Bus}
+\begin{itemize}
+  \item A bus implementation that sends \busref{EVENT_DEVICE} MUST set
+        \field{device\_number} to a valid bus device number exposed to the
+        driver side, except for DEVICE\_BUS\_STATE\_NO\_DATA.
+  \item A bus implementation that sends \busref{EVENT_DEVICE} with
+        DEVICE\_BUS\_STATE\_NO\_DATA MUST set \field{device\_number} to zero.
+  \item A bus implementation that uses DEVICE\_BUS\_STATE\_NO\_DATA MUST
+        define the required handling in its bus binding.
+  \item A bus implementation that receives \busref{EVENT_DEVICE} with
+        DEVICE\_BUS\_STATE\_NO\_DATA MUST ignore \field{device\_number} and
+        perform the handling defined by its bus binding.
+  \item A bus implementation that sends \busref{EVENT_DEVICE} with
+        DEVICE\_BUS\_STATE\_ADDED MUST do so only when the referenced device is
+        accessible for transport-message processing.
+  \item A bus implementation that sends \busref{EVENT_DEVICE} with
+        DEVICE\_BUS\_STATE\_REMOVED MUST do so when the referenced device is no
+        longer available for transport-message processing.
+\end{itemize}
