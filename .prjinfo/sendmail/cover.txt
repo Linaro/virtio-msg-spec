@@ -1,0 +1,93 @@
+This series adds the virtio-msg transport layer.
+
+The individuals and organizations involved in this effort have had difficulty in
+using the existing virtio-transports in various situations and desire to add one
+more transport that performs its transport layer operations by sending and
+receiving messages.
+
+Implementations of virtio-msg will normally be done in multiple layers:
+* common / device level
+* bus level
+
+The common / device level defines the messages exchanged between the driver
+and a device. This common part should lead to a common driver holding most
+of the virtio specifics and can be shared by all virtio-msg bus implementations.
+The kernel implementation in [3] shows this separation. As with other transport
+layers, virtio-msg should not require modifications to existing virtio device
+implementations (virtio-net, virtio-blk etc). The common / device level is the
+main focus of this version of the patch series.
+
+The virtio-msg bus level implements the normal things a bus defines
+(enumeration, dma operations, etc) but also implements the message send and
+receive operations. A number of bus implementations are envisioned,
+some of which will be reusable and general purpose. Other bus implementations
+might be unique to a given situation, for example only used by a PCIe card
+and its driver.
+
+How much of the bus level should be described in the virtio spec is one item
+we wish to discuss. This draft takes a middle approach by describing the bus
+level and defining some standard bus level messages that MAY be used by the bus.
+It also describes a range of bus messages that are implementation dependent.
+
+The standard bus messages are an effort to avoid different bus implementations
+doing the same thing in different ways for no good reason. However the
+different environments will require different things. Instead of trying to
+anticipate all needs and provide something very abstract, we think
+implementation specific messages will be needed at the bus level. Over time,
+if we see similar messages across multiple bus implementations, we will move to
+standardize a bus level message for that.
+
+We are working on two reusable bus implementations:
+
+* virtio-msg-ffa based on Arm FF-A interface for use between:
+  * normal world and secure world
+  * host and VM or VM to VM
+  * Can be used w/ or with out a hypervisor
+  * Any Hypervisor that implements FF-A can be used
+
+* virtio-msg-amp for use between heterogenous systems
+  * The main processors and its co-processors on an AMP SOC
+  * Two or more systems connected via PCIe
+  * Minimal requirements: bi-directional interrupts and
+    at least one shared memory area
+
+We also anticipate a third:
+
+* virtio-msg-xen specific to Xen
+  * Usable on any Xen system (including x86 where FF-A does not exist)
+  * Using Xen events and page grants
+
+This series is a work in progress and we acknowledge at least the following
+issues we need to work on:
+
+* Conform to virtio spec nouns (device/driver vs frontend/backend)
+  and verbs (must/may)
+* Perhaps move error definition elsewhere it the spec and align on its symbols
+  and numeric values
+* Allow message size to be greater than 40 bytes and allow bus implementations
+  to define their max message size
+* Add a way to discover the protocol version
+* Add a better description of the types of things a bus can do, specifically
+  including out-of-band notification and memory area sharing/discovery
+* Maybe redo configuration generation handling
+
+Background info and work in progress implementations:
+* HVAC project page with intro slides [1]
+* HVAC demo repo w/ instructions in README.md [2]
+* Kernel w/ virtio-msg common level and ffa support [3]
+* QEMU w/ support for one form of virtio-msg-amp [4]
+* Portable RTOS library w/ one form of virtio-msg-amp [5]
+
+In addition to the QEMU system based demos in the hvac-demo repo, we also have
+two hardware systems running:
+* AMD x86 + AMD Arm Versal connected via PCIe
+* ST STM32MP157 A7 Linux using virtio-i2c provided by M4 Zephyr
+
+Please note that although the demos work, they are not yet aligned with each
+other nor this version of the spec.
+
+[1] https://linaro.atlassian.net/wiki/spaces/HVAC/overview
+[2] https://github.com/wmamills/hvac-demo
+[3] https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=virtio/msg
+[4] https://github.com/edgarigl/qemu/commits/edgar/virtio-msg-new
+[5] https://github.com/arnopo/open-amp/commits/virtio-msg/
