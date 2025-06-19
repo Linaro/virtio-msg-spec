@@ -51,25 +51,61 @@ We are working on two reusable bus implementations:
   * Minimal requirements: bi-directional interrupts and
     at least one shared memory area
 
-We also anticipate a third:
+We also anticipate a few more:
 
 * virtio-msg-xen specific to Xen
   * Usable on any Xen system (including x86 where FF-A does not exist)
   * Using Xen events and page grants
 
+* virtio-msg-loopback for userspace implemented devices
+  * Allows user space to provide devices to its own kernel
+  * This is similar to fuse, cuse or loopback block devices but for virtio
+  * Once developed this can provide a single kernel demo of virtio-msg
+  * [Work has begun on this]
+
+* virtio-msg over admin virtqueues
+  * This allows any virtio-pci device that supports admin virtqueues to also
+    support a virtio-msg bus that supports sub devices
+  * [We are looking for collaborators for this work]
+
+Changes since RFC1:
+* reformated document to better conform to the virtio spec style
+  - created an introduction chapter
+  - created a basic concept chapter
+  - created bus operation and device initialization and operation chapters
+  - reworked description of transport and bus messages
+  - attempted a "compliance chapter"
+  - reused spec macros
+  - switched to MAY/MUST/SHALL/SHOULD wording
+  - eliminate the use of terms front-end and back-end and use driver and device
+* made the maximum message size variable per bus instance
+* use "device number" for virtio-msg device instances on the bus instead of
+  adding yet another meaning for "device ID"
+* added the configuration generation count and its use
+* described types of things that can be done with bus specific messages
+  such as setup of bus level shared memory and out of band notifications
+* removed wording of notification being optional at transport level and
+  described bus level notifications of in-band, out-of-band, and polled
+  from driver side bus
+* removed the ERROR message from transport level. Errors should be handled at
+  the bus level to better match virtio-pci and virtio-mmio
+* removed bus level reset and status from standard bus messages
+* replaced bus messages DEVICE_{ADDED,REMOVED} with EVENT_DEVICE
+* changed names to GET_DEVICE_FEATURES and SET_DRIVER_FEATURES for clarity
+* made SET_DEVICE_STATE return new state as it may not match
+* Don't echo back the data in SET_VQUEUE (it cannot change)
+* defined request/response vs event message id ranges
+* match field size of next offset and wrap to virtio-{pci,mmio}
+* added maximum number of virtqueues to DEVICE_INFO
+* added admin virtqueue and SHM support
+
 This series is a work in progress and we acknowledge at least the following
 issues we need to work on:
 
-* Conform to virtio spec nouns (device/driver vs frontend/backend)
-  and verbs (must/may)
-* Perhaps move error definition elsewhere it the spec and align on its symbols
-  and numeric values
-* Allow message size to be greater than 40 bytes and allow bus implementations
-  to define their max message size
-* Add a way to discover the protocol version
-* Add a better description of the types of things a bus can do, specifically
-  including out-of-band notification and memory area sharing/discovery
-* Maybe redo configuration generation handling
+* Better conformance documentation
+* Publish an update to Arm FF-A spec that shows virtio-msg binding (work underway)
+* Publish virtio-msg-amp data structures and messages somewhere
+* Align implementations to this version and send PATCH v1 (non-rfc)
 
 Background info and work in progress implementations:
 * HVAC project page with intro slides [1]
