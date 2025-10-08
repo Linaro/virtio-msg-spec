@@ -1,0 +1,36 @@
+name: Deploy current state
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: xu-cheng/texlive-action@v3
+        with:
+          scheme: full
+          run: |
+            apk add make msttcorefonts-installer file fontconfig font-liberation zip git
+            git config --global --add safe.directory '*'
+            update-ms-fonts
+            fc-cache -f
+            make draft
+            echo ${{ github.sha }} > Release.txt
+
+      - name: Create Draft Release and Upload Asset
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{github.ref_name}}-${{ github.repository_owner }}-draft-v${{ github.run_number }}
+          name: Draft ${{ github.run_number }}
+          prerelease: true
+          files: |
+            Release.txt
+            *.pdf
+            *.zip
