@@ -3,8 +3,8 @@
 export SPECDOC=${SPECDOC:-`cat REVISION`}
 export DATESTR=${DATESTR:-`cat REVISION-DATE`}
 ./makezip.sh
-./makehtml.sh
-./makepdf.sh
+./makehtml.sh $1
+./makepdf.sh $1
 zip $SPECDOC.zip $SPECDOC.pdf
 echo Generated file $SPECDOC.zip
 echo To change output file name, set SPECDOC environment variable
