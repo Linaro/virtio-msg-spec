@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PREFIX="PATCH RFC v3"
+PREFIX="PATCH v1"
 SUBJECT="virtio-msg transport layer"
 ME="$(git config --get user.name) <$(git config --get user.email)>"
 ME2="Mr Fake <wm.a.mills+mrfake@gmail.com>"
@@ -10,11 +10,12 @@ CC="Bertrand Marquis <bertrand.marquis@arm.com>,
 Edgar E. Iglesias <edgar.iglesias@amd.com>,
 Arnaud Pouliquen <arnaud.pouliquen@foss.st.com>,
 Viresh Kumar <viresh.kumar@linaro.org>,
-Alex Bennee <alex.bennee@linaro.org>"
+Alex Bennee <alex.bennee@linaro.org>,
+Armelle Laine <armellel@google.com>"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 SINCE=${BRANCH}-patch-base
-IGNORE_TOP=0
+IGNORE_TOP=1
 
 MY_DIR=$(dirname $0)
 BASE_DIR=$(cd $MY_DIR/../..; pwd)

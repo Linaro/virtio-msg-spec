@@ -24,11 +24,6 @@ some of which will be reusable and general purpose. Other bus implementations
 might be unique to a given situation, for example only used by a PCIe card
 and its driver.
 
-How much of the bus level should be described in the virtio spec is one item
-we wish to discuss. This draft takes a middle approach by describing the bus
-level and defining some standard bus level messages that MAY be used by the bus.
-It also describes a range of bus messages that are implementation dependent.
-
 The standard bus messages are an effort to avoid different bus implementations
 doing the same thing in different ways for no good reason. However the
 different environments will require different things. Instead of trying to
@@ -78,30 +73,29 @@ Spec Functional:
   when parallel outstanding requests are possible
 * Made the 8 byte fields align to 8 byte offsets.
   This effects the {SET,GET}_VQUEUE messages
+* Many conformance cases have been tightened.
 
 Spec Editorial:
+* Major restructure to better align with virtio spec
+  * Conformance model now matches other transports
+  * Use C structures to define messages instead of tables
 * Added a section to describe how responses are matched to requests
   This includes the use of the new token field
-* Redefined / better described error handling between to transport and bus
+* Redefined / better described error handling between transport and bus
   layers to eliminate the need for the bus to generate fake response messages
-* Included editorial feedback from Matias
-* Included much of Peter's editorial feedback, some items are still pending
+* Included editorial feedback from RFC2
 
 Eco-system:
-* Add virtio-msg-loopback demo
-* Arm has published the first draft of the virtio-msg over FFA spec
-* virtio-msg over FFA has been demonstrated with both Trusty and OP-TEE 
+* Added virtio-msg-loopback demo
+* Arm has published the first draft of the virtio-msg over FFA spec [6]
+* virtio-msg over FFA has been demonstrated with both Trusty and OP-TEE
   secure world
-* QEMU RFCv1 has been sent 
-* LKML RFCs have been sent
+* LKML RFC has been sent [7]
+* QEMU RFC has been sent [8]
 
-This series is a work in progress and we acknowledge at least the following
-issues we need to work on:
-
-* Better conformance documentation
-* Moving the Arm ltd virtio-msg FFA spec from Alpha to at least Beta level
-* Publish virtio-msg-amp data structures and messages somewhere
-* Align implementations to this version and send PATCH v1 (non-rfc)
+This is the first non-RFC patch series. The known short comings have been
+addressed. We ask for review in earnest on this series and thank you for
+any feedback you can provide.
 
 Background info and work in progress implementations:
 * HVAC project page with intro slides [1]
@@ -115,11 +109,14 @@ two hardware systems running:
 * AMD x86 + AMD Arm Versal connected via PCIe
 * ST STM32MP157 A7 Linux using virtio-i2c provided by M4 Zephyr
 
-Please note that although the demos work, not all of them have been aligned
+Please note that although the demos work, a few have not been aligned
 with this version of the spec.
 
 [1] https://linaro.atlassian.net/wiki/spaces/HVAC/overview
 [2] https://github.com/wmamills/hvac-demo
 [3] https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=virtio/msg
-[4] https://github.com/edgarigl/qemu/commits/edgar/virtio-msg-new
+[4] https://github.com/edgarigl/qemu/commits/edgar/virtio-msg-rfc/
 [5] https://github.com/arnopo/open-amp/commits/virtio-msg/
+[6] https://documentation-service.arm.com/static/68f647791134f773ab3f0a7c
+[7] https://lore.kernel.org/all/cover.1753865268.git.viresh.kumar@linaro.org/
+[8] https://mail.gnu.org/archive/html/qemu-devel/2025-10/msg07438.html
