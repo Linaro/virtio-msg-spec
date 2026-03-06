@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PREFIX="PATCH v1"
+PREFIX="PATCH v2"
 SUBJECT="virtio-msg transport layer"
 ME="$(git config --get user.name) <$(git config --get user.email)>"
 ME2="Mr Fake <wm.a.mills+mrfake@gmail.com>"
