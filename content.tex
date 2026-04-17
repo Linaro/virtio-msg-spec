@@ -2,7 +2,9 @@
 
 A virtio device is discovered and identified by a bus-specific method
 (see the bus specific sections: \ref{sec:Virtio Transport Options / Virtio Over PCI Bus}~\nameref{sec:Virtio Transport Options / Virtio Over PCI Bus},
-\ref{sec:Virtio Transport Options / Virtio Over MMIO}~\nameref{sec:Virtio Transport Options / Virtio Over MMIO} and \ref{sec:Virtio Transport Options / Virtio Over Channel I/O}~\nameref{sec:Virtio Transport Options / Virtio Over Channel I/O}).  Each
+\ref{sec:Virtio Transport Options / Virtio Over MMIO}~\nameref{sec:Virtio Transport Options / Virtio Over MMIO},
+\ref{sec:Virtio Transport Options / Virtio Over Channel I/O}~\nameref{sec:Virtio Transport Options / Virtio Over Channel I/O}
+and \ref{sec:Virtio Transport Options / Virtio Over Messages}~\nameref{sec:Virtio Transport Options / Virtio Over Messages}). Each
 device consists of the following parts:
 
 \begin{itemize}
@@ -933,11 +935,16 @@ Descriptors} and \ref{sec:Packed Virtqueues / Indirect Flag: Scatter-Gather Supp
 
   \item[VIRTIO_F_ADMIN_VQ(41)] This feature indicates that the device exposes one or more
   administration virtqueues.
-  At the moment this feature is only supported for devices using
-  \ref{sec:Virtio Transport Options / Virtio Over PCI
+  Devices using \ref{sec:Virtio Transport Options / Virtio Over PCI
 	  Bus}~\nameref{sec:Virtio Transport Options / Virtio Over PCI Bus}
-	  as the transport and is reserved for future use for
-	  devices using other transports (see
+	  expose administration virtqueues using the transport-specific
+	  fields defined by that transport. Devices using
+	  \ref{sec:Virtio Transport Options / Virtio Over Messages}~\nameref{sec:Virtio Transport Options / Virtio Over Messages}
+	  expose administration virtqueues through the device information
+	  reported by that transport.
+
+  For devices using other transports, this feature is reserved for
+	  future use (see
 	  \ref{drivernormative:Basic Facilities of a Virtio Device / Feature Bits}
 	and
 	\ref{devicenormative:Basic Facilities of a Virtio Device / Feature Bits} for
