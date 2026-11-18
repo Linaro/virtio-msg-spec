@@ -9,8 +9,7 @@ CC="Bertrand Marquis <bertrand.marquis@arm.com>,
 Edgar E. Iglesias <edgar.iglesias@amd.com>,
 Arnaud Pouliquen <arnaud.pouliquen@foss.st.com>,
 Viresh Kumar <viresh.kumar@linaro.org>,
-Alex Bennee <alex.bennee@linaro.org>,
-Armelle Laine <armellel@google.com>"
+Alex Bennee <alex.bennee@linaro.org>"
 
 UPSTREAM_BRANCH_DEFAULT=master
 UPSTREAM_BRANCH=$UPSTREAM_BRANCH_DEFAULT
@@ -78,7 +77,8 @@ Patch range:
   default.
 
 Generated files:
-  $BASE_DIR/.prjinfo/sendmail/patches
+  $BASE_DIR/.prjinfo/sendmail/patches/vN (rfc-vN with --rfc)
+  N is the reroll count. Existing series directories are never overwritten.
 EOF
 }
 
@@ -255,6 +255,19 @@ if [ -z "$MODE" ]; then
     exit 2
 fi
 
+patch_root="$BASE_DIR"/.prjinfo/sendmail/patches
+series="v$REROLL_COUNT"
+if [ -n "$RFC_OPT" ]; then
+    series="rfc-$series"
+fi
+patch_dir="$patch_root/$series"
+
+if [ -e "$patch_dir" ] || [ -L "$patch_dir" ]; then
+    echo "Output directory already exists: $patch_dir" >&2
+    echo "Existing patches have been preserved." >&2
+    exit 1
+fi
+
 get_tag() {
     git show-ref --tag --hash $1 2>/dev/null
 }
@@ -337,6 +350,7 @@ else
         echo "Skip bottom commits: $IGNORE_BOTTOM"
     fi
 fi
+echo "Output directory: $patch_dir"
 echo
 
 echo "Ignore top commits:"
@@ -356,15 +370,14 @@ else
 fi
 
 echo "^c to cancel, enter to proceed"
-read
+read -r || exit 1
 
 # example commands
 # git log -n 1 --oneline --no-abbrev-commit virtio-msg-patch2-patch-basey
 # git log --reverse --oneline --no-abbrev-commit a1883517ee44cc03d1b621a331d24a6f5cc08a92..HEAD | head -n $(( 5 + 1 )) | tail -n 1
 
-patch_dir="$BASE_DIR"/.prjinfo/sendmail/patches
-
-rm -rf "$patch_dir"
+mkdir -p "$patch_root" || exit 1
+mkdir "$patch_dir" || exit 1
 
 if ! git format-patch -o "$patch_dir" --cover-letter \
     --reroll-count="$REROLL_COUNT" $RFC_OPT ${SINCE}..HEAD~${IGNORE_TOP}; then

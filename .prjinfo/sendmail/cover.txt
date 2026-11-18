@@ -65,6 +65,25 @@ We also anticipate a few more:
 This series keeps 16-bit dev_num values per bus instance; deployments that need
 more than roughly 65k devices can scale by using multiple bus instances.
 
+Changes since v2:
+
+Thanks to David Hildenbrand, Ayrton Muñoz, Michael Riesch, and Viresh Kumar
+for reviewing v2.
+
+* Clarify optional hotplug support, bus-defined sequencing, removal safety,
+  outstanding request completion, and device-number reuse.
+* Add a NO_DATA device event for bus-specific change handling.
+* Clarify optional standard bus messages and bus-defined PING timing policy.
+* Clarify bus-internal error signaling and local failure completion.
+* Add missing response-field echo and EVENT_USED queue-index requirements,
+  with matching conformance references.
+* Clarify compatibility wording and cross-reference the token-echo requirement.
+* Keep documented binding references in the spec and prototype examples here.
+* Define address spaces and encodings through bus bindings.
+* Clarify bus-specific notification signaling, local event synthesis, and
+  virtqueue notification coalescing.
+* Fix the transport feature table width and source wrapping.
+
 Changes since v1 (virtio-msg-patch1):
 
 First, thank you for the detailed comments and broad interest on v1.
@@ -158,9 +177,9 @@ Open topics and ongoing discussion:
   benefit is demonstrated, we are open to introducing an optional feature-bit
   based extension in a follow-up patch set.
 * Graceful device removal sequencing:
-  Current direction is to handle graceful-remove sequencing in bus-specific
-  specifications. We welcome feedback on whether any additional transport-level
-  guidance would be useful.
+  Bus bindings define coordinated removal sequencing and synchronization.
+  This revision adds common safety requirements while leaving the mechanisms
+  to those bindings. We welcome feedback on this division of responsibilities.
 * Transport scope and mapping guidance:
   Discussion is still ongoing on transport-vs-bus binding scope, response
   status modeling, and mapping guidance for mmio/pci/vhost-user/KVM userspace
@@ -178,9 +197,9 @@ Eco-system:
 * LKML RFC has been sent [7]
 * QEMU RFC has been sent [8]
 
-This is v2 of the first non-RFC patch series. We are grateful for the review
-feedback and interest received on v1, and we ask for continued review on this
-revision.
+This is v3 of the first non-RFC patch series. We are grateful for the review
+feedback and interest received on v1 and v2, and we ask for continued review
+on this revision.
 
 Background info and work in progress implementations:
 * HVAC project page with intro slides [1]
@@ -202,6 +221,6 @@ with this version of the spec.
 [3] https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=virtio/msg
 [4] https://github.com/edgarigl/qemu/commits/edgar/virtio-msg-rfc/
 [5] https://github.com/arnopo/open-amp/commits/virtio-msg/
-[6] https://developer.arm.com/documentation/den0153/0101/
+[6] https://support.arm.com/documentation/den0153/latest
 [7] https://lore.kernel.org/all/cover.1753865268.git.viresh.kumar@linaro.org/
 [8] https://mail.gnu.org/archive/html/qemu-devel/2025-10/msg07438.html
