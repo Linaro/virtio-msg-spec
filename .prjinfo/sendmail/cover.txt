@@ -1,0 +1,226 @@
+This series adds the virtio-msg transport layer.
+
+The individuals and organizations involved in this effort have had difficulty in
+using the existing virtio-transports in various situations and desire to add one
+more transport that performs its transport layer operations by sending and
+receiving messages.
+
+Implementations of virtio-msg will normally be done in multiple layers:
+* common / device level
+* bus level
+
+The common / device level defines the messages exchanged between the driver
+and a device. This common part should lead to a common driver holding most
+of the virtio specifics and can be shared by all virtio-msg bus implementations.
+The kernel implementation in [3] shows this separation. As with other transport
+layers, virtio-msg should not require modifications to existing virtio device
+implementations (virtio-net, virtio-blk etc). The common / device level is the
+main focus of this version of the patch series.
+
+The virtio-msg bus level implements the normal things a bus defines
+(enumeration, dma operations, etc) but also implements the message send and
+receive operations. A number of bus implementations are envisioned,
+some of which will be reusable and general purpose. Other bus implementations
+might be unique to a given situation, for example only used by a PCIe card
+and its driver.
+
+The standard bus messages are an effort to avoid different bus implementations
+doing the same thing in different ways for no good reason. However the
+different environments will require different things. Instead of trying to
+anticipate all needs and provide something very abstract, we think
+implementation specific messages will be needed at the bus level. Over time,
+if we see similar messages across multiple bus implementations, we will move to
+standardize a bus level message for that.
+
+We are working on a few reusable bus implementations:
+
+* virtio-msg-ffa based on Arm's Virtio Message Bus over FF-A specification [6]
+  for use between:
+  * normal world and secure world
+  * host and VM or VM to VM
+  * Can be used w/ or with out a hypervisor
+  * Any Hypervisor that implements FF-A can be used
+  * We have this working with pKVM and Xen
+  * We have this working with Trusty and OP-TEE
+
+* virtio-msg-amp for use between heterogenous systems
+  * The main processors and its co-processors on an AMP SOC
+  * Two or more systems connected via PCIe
+  * Minimal requirements: bi-directional interrupts and
+    at least one shared memory area
+  * hvac-demo has 2 demos of this
+  * This is working on two hardware platforms
+
+* virtio-msg-loopback for userspace implemented devices
+  * Allows user space to provide devices to its own kernel
+  * This is similar to fuse, cuse or loopback block devices but for virtio
+  * hvac-demo has a demo
+
+We also anticipate a few more:
+
+* virtio-msg-xen specific to Xen
+  * Usable on any Xen system (including x86 where FF-A does not exist)
+  * Using Xen events and page grants
+
+This series keeps 16-bit dev_num values per bus instance; deployments that need
+more than roughly 65k devices can scale by using multiple bus instances.
+
+Changes since v2:
+
+Thanks to David Hildenbrand, Ayrton Muñoz, Michael Riesch, and Viresh Kumar
+for reviewing v2.
+
+* Clarify optional hotplug support, bus-defined sequencing, removal safety,
+  outstanding request completion, and device-number reuse.
+* Add a NO_DATA device event for bus-specific change handling.
+* Clarify optional standard bus messages and bus-defined PING timing policy.
+* Clarify bus-internal error signaling and local failure completion.
+* Add missing response-field echo and EVENT_USED queue-index requirements,
+  with matching conformance references.
+* Clarify compatibility wording and cross-reference the token-echo requirement.
+* Keep documented binding references in the spec and prototype examples here.
+* Define address spaces and encodings through bus bindings.
+* Clarify bus-specific notification signaling, local event synthesis, and
+  virtqueue notification coalescing.
+* Fix the transport feature table width and source wrapping.
+
+Changes since v1 (virtio-msg-patch1):
+
+First, thank you for the detailed comments and broad interest on v1.
+This revision incorporates review feedback from Peter Hilber, Demi Marie
+Obenour, Parav Pandit, Andrei Homescu, Manos Pitsidianakis, Michael S.
+Tsirkin, Bill Mills, and HVAC group discussion.
+
+Highlights of the changes since v1:
+
+* Finalized the common transport message model:
+  * keep the 8-byte common header
+  * keep 16-bit device numbers per bus instance and a 16-bit msg_size field
+  * note that deployments needing more than roughly 65k devices can scale by
+    using multiple bus instances
+  * clarify common message-ID encoding and validation boundaries
+  * define request completion more precisely: a valid supported request
+    completes with exactly one protocol response or a transport-visible failure
+  * clarify request/response correlation and token handling, including the
+    rule that devices echo the request token while the bus may rewrite tokens
+    internally for correlation
+  * preserve per driver/device request ordering while still allowing
+    bus-correlated out-of-order responses and events
+
+* Clarified bus versus transport responsibilities and enumeration:
+  * keep GET_DEVICE_INFO as a driver-issued transport message, and GET_DEVICES,
+    PING, and EVENT_DEVICE as optional bus messages
+  * require bus messages to use dev_num = 0
+  * bus implementations must expose only validated device numbers, may expose
+    zero devices, and should delay device-number reuse to reduce races
+  * EVENT_DEVICE is defined as a bus-originated ADDED/REMOVED hotplug event
+  * tighten GET_DEVICES enumeration semantics, including empty-bitmap cases and
+    guaranteed forward progress
+
+* Tightened initialization and feature negotiation:
+  * use transport revision terminology consistently
+  * keep GET_DEVICE_INFO as the only transport message used for early discovery
+  * align the rest of initialization with the core virtio flow through reset,
+    status progression, feature negotiation, FEATURES_OK verification, and
+    DRIVER_OK
+  * keep transport feature bits separate from device feature negotiation
+  * define GET_DEVICE_FEATURES as reporting the feature blocks offered by the
+    device
+  * require GET_DEVICE_INFO to report enough feature blocks to cover all
+    offered feature bits and bound max_virtqueues to 65536
+  * define SET_DRIVER_FEATURES as addressed-block updates carrying the subset
+    chosen by the driver, which may be built up across multiple requests before
+    FEATURES_OK
+  * keep FEATURES_OK as the point where the device accepts or rejects the
+    negotiated set
+  * make GET_SHM mandatory for devices to implement while keeping driver use
+    optional, and align the shared-memory identifier semantics with core virtio
+
+* Aligned configuration, status, and notification behavior with core virtio:
+  * align GET_CONFIG, SET_CONFIG, EVENT_CONFIG, and device status handling more
+    closely with the core virtio model
+  * keep VIRTIO_MSG_F_STRICT_CONFIG_GENERATION only as optional strict-profile
+    SET_CONFIG mismatch enforcement
+  * define nonzero SET_CONFIG writes as all-or-nothing and rejected writes as
+    length = 0 with no payload
+  * limit EVENT_CONFIG status notifications to device-originated asynchronous
+    status changes
+  * make polling-only operation explicit, with EVENT_AVAIL and EVENT_USED used
+    only when the endpoints choose event-driven notification
+  * keep bus-side forwarding, polling, or synthesized notification delivery
+    transparent to the transport-visible model
+
+* Refined virtqueue and reset semantics:
+  * clarify queue-state transitions, SET_VQUEUE update behavior, and invalid
+    reconfiguration cases
+  * make SET_VQUEUE and RESET_VQUEUE reject cases deterministic no-op empty
+    responses
+  * define deterministic GET_VQUEUE zero-sentinel responses for unavailable,
+    unimplemented, and out-of-range queues
+  * define local admin virtqueue field semantics and the EVENT_AVAIL
+    notification-data encoding more precisely
+  * clarify reset-completion checks without duplicating the core virtio reset
+    rules
+
+* Improved document quality:
+  * reworked the chapter to better match existing virtio specification style
+  * removed duplicated or ambiguous requirements
+  * fixed label paths, direct field references, punctuation, and ambiguous
+    wording
+  * added informative known bus implementation examples
+  * completed conformance coverage for driver, device, and bus clauses
+  * normalized punctuation and wording for consistency with the rest of the spec
+
+Open topics and ongoing discussion:
+* Out-of-order/performance extensions:
+  We kept the baseline behavior simple in this revision. If clear performance
+  benefit is demonstrated, we are open to introducing an optional feature-bit
+  based extension in a follow-up patch set.
+* Graceful device removal sequencing:
+  Bus bindings define coordinated removal sequencing and synchronization.
+  This revision adds common safety requirements while leaving the mechanisms
+  to those bindings. We welcome feedback on this division of responsibilities.
+* Transport scope and mapping guidance:
+  Discussion is still ongoing on transport-vs-bus binding scope, response
+  status modeling, and mapping guidance for mmio/pci/vhost-user/KVM userspace
+  cases. We are collecting reviewer input before deciding on follow-up text.
+* Potential virtio-msg over virtqueues for PCI/MMIO:
+  This is still early discussion, including whether admin virtqueues should be
+  used or extended for this purpose. There is no consensus yet, and we are
+  continuing design exploration.
+
+Eco-system:
+* Added virtio-msg-loopback demo
+* Arm has published the Virtio Message Bus over FF-A specification [6]
+* virtio-msg over FF-A has been demonstrated with both Trusty and OP-TEE
+  secure world
+* LKML RFC has been sent [7]
+* QEMU RFC has been sent [8]
+
+This is v3 of the first non-RFC patch series. We are grateful for the review
+feedback and interest received on v1 and v2, and we ask for continued review
+on this revision.
+
+Background info and work in progress implementations:
+* HVAC project page with intro slides [1]
+* HVAC demo repo w/ instructions in README.md [2]
+* Kernel w/ virtio-msg common level and ffa support [3]
+* QEMU w/ support for one form of virtio-msg-amp [4]
+* Portable RTOS library w/ one form of virtio-msg-amp [5]
+
+In addition to the QEMU system based demos in the hvac-demo repo, we also have
+two hardware systems running:
+* AMD x86 + AMD Arm Versal connected via PCIe
+* ST STM32MP157 A7 Linux using virtio-i2c provided by M4 Zephyr
+
+Please note that although the demos work, a few have not been aligned
+with this version of the spec.
+
+[1] https://linaro.atlassian.net/wiki/spaces/HVAC/overview
+[2] https://github.com/wmamills/hvac-demo
+[3] https://git.kernel.org/pub/scm/linux/kernel/git/vireshk/linux.git/log/?h=virtio/msg
+[4] https://github.com/edgarigl/qemu/commits/edgar/virtio-msg-rfc/
+[5] https://github.com/arnopo/open-amp/commits/virtio-msg/
+[6] https://support.arm.com/documentation/den0153/latest
+[7] https://lore.kernel.org/all/cover.1753865268.git.viresh.kumar@linaro.org/
+[8] https://mail.gnu.org/archive/html/qemu-devel/2025-10/msg07438.html
