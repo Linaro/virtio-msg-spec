@@ -1,0 +1,31 @@
+name: CI
+
+on: [pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: xu-cheng/texlive-action@v3
+        with:
+          scheme: full
+          run: |
+            apk add make msttcorefonts-installer file fontconfig font-liberation zip git
+            git config --global --add safe.directory '*'
+            update-ms-fonts
+            fc-cache -f
+            make draft
+            echo ${{ github.sha }} > Release.txt
+
+      - name: Upload Draft Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: virtio-draft-pr-${{ github.event.pull_request.number || github.sha }}
+          path: |
+            Release.txt
+            *.pdf
+            *.zip
+

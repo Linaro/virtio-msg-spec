@@ -14,7 +14,7 @@ Conformance targets:
 \item[Driver] A driver MUST conform to four conformance clauses:
   \begin{itemize}
     \item Clause \ref{sec:Conformance / Driver Conformance}.
-    \item One of clauses \ref{sec:Conformance / Driver Conformance / PCI Driver Conformance}, \ref{sec:Conformance / Driver Conformance / MMIO Driver Conformance} or \ref{sec:Conformance / Driver Conformance / Channel I/O Driver Conformance}.
+    \item One of clauses \ref{sec:Conformance / Driver Conformance / PCI Driver Conformance}, \ref{sec:Conformance / Driver Conformance / MMIO Driver Conformance}, \ref{sec:Conformance / Driver Conformance / Channel I/O Driver Conformance} or \ref{sec:Conformance / Driver Conformance / Virtio Over Messages Driver Conformance}.
     \item One of clauses
 \ref{sec:Conformance / Driver Conformance / Network Driver Conformance},
 \ref{sec:Conformance / Driver Conformance / Block Driver Conformance},
@@ -45,7 +45,7 @@ Conformance targets:
 \item[Device] A device MUST conform to four conformance clauses:
   \begin{itemize}
     \item Clause \ref{sec:Conformance / Device Conformance}.
-    \item One of clauses \ref{sec:Conformance / Device Conformance / PCI Device Conformance}, \ref{sec:Conformance / Device Conformance / MMIO Device Conformance} or \ref{sec:Conformance / Device Conformance / Channel I/O Device Conformance}.
+    \item One of clauses \ref{sec:Conformance / Device Conformance / PCI Device Conformance}, \ref{sec:Conformance / Device Conformance / MMIO Device Conformance}, \ref{sec:Conformance / Device Conformance / Channel I/O Device Conformance} or \ref{sec:Conformance / Device Conformance / Virtio Over Messages Device Conformance}.
     \item One of clauses 
 \ref{sec:Conformance / Device Conformance / Network Device Conformance}, 
 \ref{sec:Conformance / Device Conformance / Block Device Conformance}, 
@@ -73,6 +73,7 @@ Conformance targets:
 
     \item Clause \ref{sec:Conformance / Legacy Interface: Transitional Device and Transitional Driver Conformance}.
   \end{itemize}
+\item[Bus] A bus implementation MUST conform to clause \ref{sec:Conformance / Bus Conformance / Virtio Over Messages Bus Conformance} when providing Virtio Over Messages.
 \end{description}
 
 \conformance{\section}{Driver Conformance}\label{sec:Conformance / Driver Conformance}
@@ -145,6 +146,37 @@ A Channel I/O driver MUST conform to the following normative statements:
 \item \ref{drivernormative:Virtio Transport Options / Virtio over channel I/O / Device Operation / Host->Guest Notification / Notification via Adapter I/O Interrupts}
 \item \ref{drivernormative:Virtio Transport Options / Virtio over channel I/O / Device Operation / Guest->Host Notification}
 \item \ref{drivernormative:Virtio Transport Options / Virtio over channel I/O / Device Operation / Resetting Devices}
+\end{itemize}
+
+\conformance{\subsection}{Virtio Over Messages Driver Conformance}\label{sec:Conformance / Driver Conformance / Virtio Over Messages Driver Conformance}
+
+A Virtio Over Messages driver MUST conform to the following normative statements:
+
+\begin{itemize}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Driver Limits}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Endianness / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Overview / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Information / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Finalizing Initialization / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Operation / Driver Notifications / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / Mandatory / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_INFO / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_FEATURES / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DRIVER_FEATURES / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_CONFIG / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_CONFIG / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_STATUS / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DEVICE_STATUS / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_VQUEUE / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_VQUEUE / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_RESET_VQUEUE / Driver}
+\item \ref{drivernormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_AVAIL / Driver}
 \end{itemize}
 
 \input{device-types/net/driver-conformance.tex}
@@ -241,6 +273,36 @@ A Channel I/O device MUST conform to the following normative statements:
 \item \ref{devicenormative:Virtio Transport Options / Virtio over channel I/O / Device Operation / Resetting Devices}
 \end{itemize}
 
+\conformance{\subsection}{Virtio Over Messages Device Conformance}\label{sec:Conformance / Device Conformance / Virtio Over Messages Device Conformance}
+
+A Virtio Over Messages device MUST conform to the following normative statements:
+
+\begin{itemize}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Device Limits}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Configuration Semantics Profiles / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Feature Blocks / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Endianness / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Ordering / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Device Features / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Device Initialization / Finalizing Initialization / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Device Operation / Device Notifications / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / Mandatory / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_INFO / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_FEATURES / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_CONFIG / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_CONFIG / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_DEVICE_STATUS / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_DEVICE_STATUS / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_VQUEUE / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_SET_VQUEUE / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_RESET_VQUEUE / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_GET_SHM / Device}
+\item \ref{devicenormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_USED / Device}
+\end{itemize}
+
 \input{device-types/net/device-conformance.tex}
 \input{device-types/blk/device-conformance.tex}
 \input{device-types/console/device-conformance.tex}
@@ -264,6 +326,40 @@ A Channel I/O device MUST conform to the following normative statements:
 \input{device-types/spi/device-conformance.tex}
 \input{device-types/media/device-conformance.tex}
 \input{device-types/rtc/device-conformance.tex}
+
+\conformance{\section}{Bus Conformance}\label{sec:Conformance / Bus Conformance}
+
+A bus implementation MUST conform to the relevant bus normative statements.
+
+\conformance{\subsection}{Virtio Over Messages Bus Conformance}\label{sec:Conformance / Bus Conformance / Virtio Over Messages Bus Conformance}
+
+A Virtio Over Messages bus implementation MUST conform to the following normative statements:
+
+\begin{itemize}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport / Bus Messages}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Relationship between bus and transport / Transport Message Forwarding}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Advertising Transport Parameters}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Revisions / Message Size}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Versioning and Forward Compatibility / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Device Numbers / Assignment}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Error Signaling / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Memory Addresses / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Common Message Format / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Basic Concepts / Ordering / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Device Discovery / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / Runtime Notifications / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Device Operation / Hotplug and Removal / Bus}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Transport Messages / VIRTIO_MSG_EVENT_AVAIL / Bus}
+\end{itemize}
+
+If a Virtio Over Messages bus implementation supports optional bus messages, it
+MUST also conform to the corresponding normative statements:
+
+\begin{itemize}
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Bus Messages / GET_DEVICES / Bus} (if BUS_MSG_GET_DEVICES is supported)
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Bus Messages / PING / Bus} (if BUS_MSG_PING is supported)
+\item \ref{busnormative:Virtio Transport Options / Virtio Over Messages / Bus Messages / EVENT_DEVICE / Bus} (if BUS_MSG_EVENT_DEVICE is supported)
+\end{itemize}
 
 \conformance{\section}{Legacy Interface: Transitional Device and Transitional Driver Conformance}\label{sec:Conformance / Legacy Interface: Transitional Device and Transitional Driver Conformance}
 A conformant implementation MUST be either transitional or

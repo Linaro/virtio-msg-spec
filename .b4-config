@@ -1,0 +1,9 @@
+#
+# Common b4 settings that can be used to send patches to virtio-comment.
+# https://b4.docs.kernel.org/
+#
+
+[b4]
+    send-series-to = virtio-comment@lists.linux.dev
+    searchmask = https://lore.kernel.org/virtio-comment/?x=m&t=1&q=%s
+    linkmask = https://lore.kernel.org/virto-comment/%s

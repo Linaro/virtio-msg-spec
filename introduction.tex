@@ -20,7 +20,7 @@ inter-guest communication) requires copying.
 \item[Standard:] Virtio makes no assumptions about the environment in which
   it operates, beyond supporting the bus to which device is attached.
   In this specification, virtio
-  devices are implemented over MMIO, Channel I/O and PCI bus transports
+  devices are implemented over MMIO, Channel I/O, PCI bus, and message-based transports
 \footnote{The Linux implementation further separates the virtio
 transport code from the specific virtio drivers: these drivers are shared
 between different transports.
@@ -92,6 +92,9 @@ Common I/O]} & ESA/390 Common I/O-Device and Self-Description, IBM Publication S
 	\phantomsection\label{intro:I2C}\textbf{[I2C]} &
 	I2C-bus specification and user manual,
 	\newline\url{https://www.nxp.com/docs/en/user-guide/UM10204.pdf}\\
+	\phantomsection\label{intro:FFA-BUS}\textbf{[FFA-BUS]} &
+	Arm, Virtio Message Bus over FF-A, DEN0153,
+	\newline\url{https://support.arm.com/documentation/den0153/latest}\\
 	\phantomsection\label{intro:SCMI}\textbf{[SCMI]} &
 	Arm System Control and Management Interface, DEN0056,
 	\newline\url{https://developer.arm.com/docs/den0056/c}, version C and any future revisions\\
@@ -350,4 +353,3 @@ refer to values 1 and 2 of Fld respectively. Further, VIRTIO_FLD_XXX refers to
 either VIRTIO_FLD_A or VIRTIO_FLD_B.
 
 \newpage
-
